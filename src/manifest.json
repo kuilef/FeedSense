@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "FeedSense",
+  "version": "0.1.0",
+  "description": "Facebook feed filtering and TL;DR extension.",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["https://www.facebook.com/*"],
+  "background": {
+    "service_worker": "background/serviceWorker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.facebook.com/*"],
+      "js": ["content/index.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options/index.html"
+}

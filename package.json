@@ -1,0 +1,11 @@
+{
+  "name": "feedsense",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test tests/**/*.test.mjs"
+  }
+}

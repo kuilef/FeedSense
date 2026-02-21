@@ -1,4 +1,5 @@
 import { ActionDecision, BgResponse, PostSignals, SettingsV1 } from "../shared/contracts";
+import { CMF_FOLLOW_DICTIONARY } from "./cmfCore";
 import { DecisionApplier } from "./decisionApplier";
 import { FacebookFeedLocator } from "./feedLocator";
 import { sendBgRequest } from "./messaging/bgClient";
@@ -65,8 +66,16 @@ const KEEP_REEVAL_DELAY_MS = 450;
 const RULES_CACHE_TTL_MS = 10_000;
 const FINGERPRINT_TEXT_LIMIT = 6000;
 const FINGERPRINT_INTERACTIVE_LIMIT = 80;
+const FOLLOW_SWEEP_MAX_CANDIDATES = 2000;
 const FINGERPRINT_SELECTOR =
   'button, [role="button"], a[role="link"], a[href], [aria-label], [aria-description], [title], [data-tooltip-content]';
+const FEED_UNIT_CONTAINER_SELECTORS = [
+  '[role="article"]',
+  'div[data-pagelet*="FeedUnit" i]',
+  'div[aria-posinset]',
+  'div[aria-describedby]'
+] as const;
+const INVISIBLE_TEXT_CHARS = /[\u200B-\u200F\u2060\uFEFF]/g;
 const normalizeSourceName = (name: string | undefined): string => name?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
 type RuntimeRules = Pick<
   SettingsV1["rules"],
@@ -112,7 +121,68 @@ const hashString = (value: string): string => {
   return `${hash}`;
 };
 
-const normalizeForFingerprint = (value: string): string => value.replace(/\s+/g, " ").trim().toLowerCase();
+const normalizeForFingerprint = (value: string): string =>
+  value.normalize("NFKC").replace(INVISIBLE_TEXT_CHARS, "").replace(/\s+/g, " ").trim().toLowerCase();
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const matchesTokenBoundary = (text: string, token: string): boolean => {
+  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(token)}($|[^\\p{L}\\p{N}])`, "iu");
+  return pattern.test(text);
+};
+
+const matchesSpacedAsciiToken = (text: string, token: string): boolean => {
+  const sequence = token
+    .split("")
+    .map((char) => escapeRegExp(char))
+    .join("[\\s\\p{P}\\p{S}]+");
+  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${sequence}($|[^\\p{L}\\p{N}])`, "iu");
+  return pattern.test(text);
+};
+
+const hasFollowToken = (value: string): boolean => {
+  const normalized = normalizeForFingerprint(value);
+  if (!normalized) {
+    return false;
+  }
+
+  for (let i = 0; i < CMF_FOLLOW_DICTIONARY.length; i += 1) {
+    const token = CMF_FOLLOW_DICTIONARY[i];
+    if (/^[a-z]+$/i.test(token)) {
+      if (matchesTokenBoundary(normalized, token) || matchesSpacedAsciiToken(normalized, token)) {
+        return true;
+      }
+      continue;
+    }
+    if (normalized.includes(token) || matchesTokenBoundary(normalized, token)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const isFollowCtaElement = (element: HTMLElement): boolean => {
+  const texts = [
+    element.textContent ?? "",
+    element.getAttribute("aria-label") ?? "",
+    element.getAttribute("aria-description") ?? "",
+    element.getAttribute("title") ?? "",
+    element.getAttribute("data-tooltip-content") ?? ""
+  ];
+  return texts.some((value) => hasFollowToken(value));
+};
+
+const findFeedUnitContainer = (element: HTMLElement, root: HTMLElement): HTMLElement | null => {
+  for (let i = 0; i < FEED_UNIT_CONTAINER_SELECTORS.length; i += 1) {
+    const container = element.closest<HTMLElement>(FEED_UNIT_CONTAINER_SELECTORS[i]);
+    if (!container || !root.contains(container)) {
+      continue;
+    }
+    return container.closest<HTMLElement>('[role="article"]') ?? container;
+  }
+  return null;
+};
 
 const getUnitFingerprint = (unit: HTMLElement): string => {
   const chunks: string[] = [];
@@ -142,6 +212,43 @@ const hasUnitFingerprintChanged = (unit: HTMLElement): boolean => {
   const prevFingerprint = unit.dataset.fbcleanFingerprint ?? "";
   unit.dataset.fbcleanFingerprint = nextFingerprint;
   return prevFingerprint !== nextFingerprint;
+};
+
+const sweepAndHideFollowUnits = (root: HTMLElement): number => {
+  const elements = root.querySelectorAll<HTMLElement>(FINGERPRINT_SELECTOR);
+  const max = Math.min(elements.length, FOLLOW_SWEEP_MAX_CANDIDATES);
+  const hidden = new Set<HTMLElement>();
+
+  for (let i = 0; i < max; i += 1) {
+    const element = elements[i];
+    if (!isFollowCtaElement(element)) {
+      continue;
+    }
+
+    const unit = findFeedUnitContainer(element, root);
+    if (!unit || hidden.has(unit) || unit.dataset.fbcleanState === "hide") {
+      continue;
+    }
+
+    const textLength = normalizeForFingerprint(unit.innerText || unit.textContent || "").length;
+    if (textLength < 25) {
+      continue;
+    }
+
+    const decision: ActionDecision = {
+      action: "HIDE",
+      confidence: 1,
+      reasonCodes: ["DIRECT_FOLLOW_CTA_SWEEP"]
+    };
+    applier.apply(unit, decision, decision.reasonCodes.join(","));
+    unit.dataset.fbcleanKeepScans = "0";
+    unit.dataset.fbcleanFingerprint = getUnitFingerprint(unit);
+    processed.add(unit);
+    debugState.processedCount += 1;
+    hidden.add(unit);
+  }
+
+  return hidden.size;
 };
 
 const getKeepReevalCount = (unit: HTMLElement): number => {
@@ -359,6 +466,12 @@ const processBatch = async () => {
     return;
   }
 
+  await refreshRuntimeRules();
+  if (extensionContextInvalidated) {
+    return;
+  }
+
+  const sweptHidden = runtimeRules.hideFollowMarked ? sweepAndHideFollowUnits(root) : 0;
   const locatedUnits = unitLocator.locateUnits(root);
   const units = locatedUnits.filter((unit) => {
     if (processed.has(unit) || unit.dataset.fbcleanProcessed === "1") {
@@ -381,12 +494,10 @@ const processBatch = async () => {
   debugState.lastBatchSize = batch.length;
 
   if (!batch.length) {
-    updateDebugPanel("empty-batch");
-    return;
-  }
-
-  await refreshRuntimeRules();
-  if (extensionContextInvalidated) {
+    updateDebugPanel(sweptHidden > 0 ? `sweep:${sweptHidden}` : "empty-batch");
+    if (sweptHidden > 0) {
+      debugLog("follow sweep hid units", { hidden: sweptHidden });
+    }
     return;
   }
 

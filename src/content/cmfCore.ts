@@ -123,6 +123,15 @@ export const CMF_NEWS_FEED_POST_QUERIES = [
   'div[role="feed"] > h2[dir="auto"] ~ div:not([class]) > div[data-pagelet*="FeedUnit_"] > div > div > div > div'
 ] as const;
 
+export const CMF_NEWS_FEED_FALLBACK_QUERIES = [
+  'div[role="feed"] > div',
+  'div[role="feed"] > div > div',
+  'div[role="feed"] div[data-pagelet*="FeedUnit" i]',
+  'div[role="main"] div[role="feed"] > div',
+  'div[role="main"] [role="article"]',
+  'main div[role="feed"] > div'
+] as const;
+
 const hasDictionaryToken = (value: string, dictionary: string[]): boolean => {
   const lowered = cleanText(value).trim().toLowerCase();
   if (!lowered) {
@@ -489,13 +498,65 @@ export const collectNewsFeedPosts = (container?: ParentNode): HTMLElement[] => {
     return [];
   }
 
-  for (let queryIndex = 0; queryIndex < CMF_NEWS_FEED_POST_QUERIES.length; queryIndex += 1) {
-    const query = CMF_NEWS_FEED_POST_QUERIES[queryIndex];
-    const posts = Array.from(scope.querySelectorAll<HTMLElement>(query));
-    if (posts.length) {
-      return posts;
+  const dedupe = (items: HTMLElement[]): HTMLElement[] => {
+    const seen = new Set<HTMLElement>();
+    const result: HTMLElement[] = [];
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      if (seen.has(item)) {
+        continue;
+      }
+      seen.add(item);
+      result.push(item);
     }
+    return result;
+  };
+
+  const isLikelyFeedUnit = (element: HTMLElement): boolean => {
+    if (!element.isConnected) {
+      return false;
+    }
+
+    const nestedArticles = element.querySelectorAll('[role="article"]').length;
+    if (nestedArticles > 1) {
+      return false;
+    }
+
+    const textLen = cleanText(element.textContent ?? "").trim().length;
+    if (textLen < 20) {
+      return false;
+    }
+
+    const hasInteractive = Boolean(
+      element.querySelector('a[role="link"], a[href], [role="button"], button, [aria-label], [data-ad-preview="message"]')
+    );
+    return hasInteractive;
+  };
+
+  const pickBestSet = (queries: readonly string[]): HTMLElement[] => {
+    let best: HTMLElement[] = [];
+    for (let queryIndex = 0; queryIndex < queries.length; queryIndex += 1) {
+      const query = queries[queryIndex];
+      const found = Array.from(scope.querySelectorAll<HTMLElement>(query));
+      if (!found.length) {
+        continue;
+      }
+
+      const filtered = dedupe(found.filter(isLikelyFeedUnit));
+      const candidates = filtered.length > 0 ? filtered : dedupe(found);
+      if (candidates.length > best.length) {
+        best = candidates;
+      }
+    }
+    return best;
+  };
+
+  const primary = pickBestSet(CMF_NEWS_FEED_POST_QUERIES);
+  const fallback = pickBestSet(CMF_NEWS_FEED_FALLBACK_QUERIES);
+
+  if (fallback.length > primary.length) {
+    return fallback;
   }
 
-  return [];
+  return primary;
 };

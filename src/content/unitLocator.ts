@@ -6,7 +6,9 @@ export interface UnitLocator {
 
 export class FacebookUnitLocator implements UnitLocator {
   locateUnits(feedRoot: HTMLElement): HTMLElement[] {
-    const posts = collectNewsFeedPosts(feedRoot.ownerDocument ?? undefined);
+    const postsInRoot = collectNewsFeedPosts(feedRoot);
+    const postsInDocument = collectNewsFeedPosts(feedRoot.ownerDocument ?? undefined);
+    const posts = postsInDocument.length > postsInRoot.length ? postsInDocument : postsInRoot;
     if (posts.length) {
       return posts;
     }

@@ -63,6 +63,10 @@ const DEBUG_BADGE_ID = "fbclean-debug-badge";
 const MAX_KEEP_REEVALS = 4;
 const KEEP_REEVAL_DELAY_MS = 450;
 const RULES_CACHE_TTL_MS = 10_000;
+const FINGERPRINT_TEXT_LIMIT = 6000;
+const FINGERPRINT_INTERACTIVE_LIMIT = 80;
+const FINGERPRINT_SELECTOR =
+  'button, [role="button"], a[role="link"], a[href], [aria-label], [aria-description], [title], [data-tooltip-content]';
 const normalizeSourceName = (name: string | undefined): string => name?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
 type RuntimeRules = Pick<
   SettingsV1["rules"],
@@ -108,9 +112,28 @@ const hashString = (value: string): string => {
   return `${hash}`;
 };
 
+const normalizeForFingerprint = (value: string): string => value.replace(/\s+/g, " ").trim().toLowerCase();
+
 const getUnitFingerprint = (unit: HTMLElement): string => {
-  const raw = unit.innerText || unit.textContent || "";
-  const normalized = raw.replace(/\s+/g, " ").trim().toLowerCase().slice(0, 2000);
+  const chunks: string[] = [];
+  chunks.push(normalizeForFingerprint(unit.innerText || unit.textContent || "").slice(0, 2500));
+  chunks.push(normalizeForFingerprint(unit.getAttribute("aria-label") ?? ""));
+  chunks.push(normalizeForFingerprint(unit.getAttribute("aria-description") ?? ""));
+  chunks.push(normalizeForFingerprint(unit.getAttribute("title") ?? ""));
+
+  const interactive = unit.querySelectorAll<HTMLElement>(FINGERPRINT_SELECTOR);
+  const max = Math.min(interactive.length, FINGERPRINT_INTERACTIVE_LIMIT);
+  for (let i = 0; i < max; i += 1) {
+    const el = interactive[i];
+    const text = normalizeForFingerprint(el.textContent ?? "").slice(0, 80);
+    const ariaLabel = normalizeForFingerprint(el.getAttribute("aria-label") ?? "").slice(0, 80);
+    const ariaDescription = normalizeForFingerprint(el.getAttribute("aria-description") ?? "").slice(0, 80);
+    const title = normalizeForFingerprint(el.getAttribute("title") ?? "").slice(0, 80);
+    const tooltip = normalizeForFingerprint(el.getAttribute("data-tooltip-content") ?? "").slice(0, 80);
+    chunks.push(`${el.tagName}|${text}|${ariaLabel}|${ariaDescription}|${title}|${tooltip}`);
+  }
+
+  const normalized = chunks.join("\n").slice(0, FINGERPRINT_TEXT_LIMIT);
   return `${hashString(normalized)}:${normalized.length}`;
 };
 
@@ -562,8 +585,13 @@ window.setInterval(() => {
   if (lastHref !== location.href) {
     lastHref = location.href;
     observer.stop();
+
+    if (extensionContextInvalidated) {
+      updateDebugPanel("context-invalidated");
+      return;
+    }
+
     processed = new WeakSet<HTMLElement>();
-    extensionContextInvalidated = false;
     updateDebugPanel("route-change");
     bootstrap();
   }

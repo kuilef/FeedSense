@@ -20,10 +20,41 @@ export class SettingsStore {
   }
 
   private migrate(settings: SettingsV1): SettingsV1 {
-    if (settings.schemaVersion === 1) {
-      return settings;
+    if (settings.schemaVersion !== 1) {
+      return DEFAULT_SETTINGS;
     }
 
-    return DEFAULT_SETTINGS;
+    return {
+      ...DEFAULT_SETTINGS,
+      ...settings,
+      ui: {
+        ...DEFAULT_SETTINGS.ui,
+        ...settings.ui
+      },
+      rules: {
+        ...DEFAULT_SETTINGS.rules,
+        ...settings.rules,
+        priority: {
+          ...DEFAULT_SETTINGS.rules.priority,
+          ...settings.rules?.priority
+        }
+      },
+      llm: {
+        ...DEFAULT_SETTINGS.llm,
+        ...settings.llm,
+        promptProfile: {
+          ...DEFAULT_SETTINGS.llm.promptProfile,
+          ...settings.llm?.promptProfile
+        },
+        limits: {
+          ...DEFAULT_SETTINGS.llm.limits,
+          ...settings.llm?.limits
+        }
+      },
+      debug: {
+        ...DEFAULT_SETTINGS.debug,
+        ...settings.debug
+      }
+    };
   }
 }

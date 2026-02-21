@@ -63,6 +63,10 @@ export class DefaultPolicyEngine implements PolicyEngine {
       return "COLLAPSE";
     }
 
+    if (settings.rules.hideFollowMarked && signals.isFollowMarked) {
+      return "HIDE";
+    }
+
     const text = signals.text.toLowerCase();
     if (settings.rules.allowKeywords.some((keyword) => text.includes(keyword.toLowerCase()))) {
       return "ALLOW";

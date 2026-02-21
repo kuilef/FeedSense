@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS: SettingsV1 = {
     hideSponsored: true,
     hideSuggested: false,
     collapseReels: true,
+    hideFollowMarked: true,
     priority: {
       allowlistOverridesAll: true,
       blocklistOverridesLLM: true

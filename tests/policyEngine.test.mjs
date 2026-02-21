@@ -68,3 +68,26 @@ test("does not auto-hide target group posts on that group page", async () => {
   assert.equal(outcome.classification.label, "REVIEW");
   assert.equal(outcome.action.action, "COLLAPSE");
 });
+
+test("hides follow-marked posts by default", async () => {
+  const engine = new DefaultPolicyEngine();
+  const outcome = await engine.evaluateOne({ ...baseSignals, isFollowMarked: true }, DEFAULT_SETTINGS);
+
+  assert.equal(outcome.classification.label, "HIDE");
+  assert.equal(outcome.action.action, "HIDE");
+});
+
+test("does not hide follow-marked posts when follow filter is disabled", async () => {
+  const engine = new DefaultPolicyEngine();
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    rules: {
+      ...DEFAULT_SETTINGS.rules,
+      hideFollowMarked: false
+    }
+  };
+
+  const outcome = await engine.evaluateOne({ ...baseSignals, isFollowMarked: true }, settings);
+  assert.equal(outcome.classification.label, "REVIEW");
+  assert.equal(outcome.action.action, "COLLAPSE");
+});

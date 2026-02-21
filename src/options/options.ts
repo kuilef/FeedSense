@@ -4,6 +4,7 @@ const SETTINGS_KEY = "fbclean.settings";
 
 const globalModeInput = document.getElementById("globalMode") as HTMLSelectElement;
 const hideSponsoredInput = document.getElementById("hideSponsored") as HTMLInputElement;
+const hideFollowMarkedInput = document.getElementById("hideFollowMarked") as HTMLInputElement;
 const saveButton = document.getElementById("save") as HTMLButtonElement;
 
 const load = async (): Promise<void> => {
@@ -15,6 +16,7 @@ const load = async (): Promise<void> => {
 
   globalModeInput.value = settings.globalMode;
   hideSponsoredInput.checked = settings.rules.hideSponsored;
+  hideFollowMarkedInput.checked = settings.rules.hideFollowMarked ?? true;
 };
 
 saveButton.addEventListener("click", async () => {
@@ -22,6 +24,7 @@ saveButton.addEventListener("click", async () => {
   const settings = payload[SETTINGS_KEY] as SettingsV1;
   settings.globalMode = globalModeInput.value as SettingsV1["globalMode"];
   settings.rules.hideSponsored = hideSponsoredInput.checked;
+  settings.rules.hideFollowMarked = hideFollowMarkedInput.checked;
   await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
 });
 

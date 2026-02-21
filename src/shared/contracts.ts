@@ -48,6 +48,7 @@ export interface PostSignals {
   isSponsored?: boolean;
   isSuggested?: boolean;
   isReel?: boolean;
+  isFollowMarked?: boolean;
 
   extractionConfidence: number;
   markers: string[];
@@ -68,6 +69,7 @@ export interface SettingsV1 {
     hideSponsored: boolean;
     hideSuggested: boolean;
     collapseReels: boolean;
+    hideFollowMarked: boolean;
     priority: {
       allowlistOverridesAll: boolean;
       blocklistOverridesLLM: boolean;

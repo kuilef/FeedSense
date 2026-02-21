@@ -1,4 +1,4 @@
-import { ActionDecision, BgResponse, PostSignals } from "../shared/contracts";
+import { ActionDecision, BgResponse, PostSignals, SettingsV1 } from "../shared/contracts";
 import { DecisionApplier } from "./decisionApplier";
 import { FacebookFeedLocator } from "./feedLocator";
 import { sendBgRequest } from "./messaging/bgClient";
@@ -62,6 +62,20 @@ const DEBUG_STATE_NODE_ID = "fbclean-debug-state";
 const DEBUG_BADGE_ID = "fbclean-debug-badge";
 const MAX_KEEP_REEVALS = 4;
 const KEEP_REEVAL_DELAY_MS = 450;
+const RULES_CACHE_TTL_MS = 10_000;
+const normalizeSourceName = (name: string | undefined): string => name?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
+type RuntimeRules = Pick<
+  SettingsV1["rules"],
+  "hideSponsored" | "hideSuggested" | "collapseReels" | "hideFollowMarked" | "allowSources"
+>;
+const runtimeRules: RuntimeRules = {
+  hideSponsored: true,
+  hideSuggested: false,
+  collapseReels: true,
+  hideFollowMarked: true,
+  allowSources: []
+};
+let rulesFetchedAt = 0;
 
 const debugLog = (...args: unknown[]) => {
   if (!DEBUG) {
@@ -110,6 +124,58 @@ const handleExtensionContextInvalidated = () => {
   debugState.lastError = "Extension context invalidated. Reload the page after reloading extension.";
   updateDebugPanel("context-invalidated");
   debugWarn("Extension context invalidated. Stop processing until page reload.");
+};
+
+const refreshRuntimeRules = async () => {
+  if (Date.now() - rulesFetchedAt < RULES_CACHE_TTL_MS) {
+    return;
+  }
+
+  rulesFetchedAt = Date.now();
+  try {
+    const response = await sendBgRequest<BgResponse>({ type: "GET_SETTINGS" });
+    if (response.type !== "SETTINGS") {
+      return;
+    }
+    runtimeRules.hideSponsored = response.value.rules.hideSponsored !== false;
+    runtimeRules.hideSuggested = response.value.rules.hideSuggested === true;
+    runtimeRules.collapseReels = response.value.rules.collapseReels !== false;
+    runtimeRules.hideFollowMarked = response.value.rules.hideFollowMarked !== false;
+    runtimeRules.allowSources = response.value.rules.allowSources;
+  } catch (error) {
+    if (isExtensionContextInvalidatedError(error)) {
+      handleExtensionContextInvalidated();
+      return;
+    }
+    debugWarn("failed to refresh runtime rules", error);
+  }
+};
+
+const isAllowlistedSource = (signals: PostSignals): boolean => {
+  const sourceName = normalizeSourceName(signals.sourceName);
+  if (!sourceName) {
+    return false;
+  }
+  return runtimeRules.allowSources.some((source) => normalizeSourceName(source.name) === sourceName);
+};
+
+const getDirectDecision = (signals: PostSignals): ActionDecision | null => {
+  if (isAllowlistedSource(signals)) {
+    return null;
+  }
+  if (runtimeRules.hideSponsored && signals.isSponsored) {
+    return { action: "HIDE", confidence: 1, reasonCodes: ["DIRECT_SPONSORED_MARKER"] };
+  }
+  if (runtimeRules.hideFollowMarked && signals.isFollowMarked) {
+    return { action: "HIDE", confidence: 1, reasonCodes: ["DIRECT_FOLLOW_MARKER"] };
+  }
+  if (runtimeRules.hideSuggested && signals.isSuggested) {
+    return { action: "HIDE", confidence: 1, reasonCodes: ["DIRECT_SUGGESTED_MARKER"] };
+  }
+  if (runtimeRules.collapseReels && signals.isReel) {
+    return { action: "COLLAPSE", confidence: 0.95, reasonCodes: ["DIRECT_REELS_MARKER"] };
+  }
+  return null;
 };
 
 const getDebugSnapshot = (): FeedSenseDebugSnapshot => {
@@ -272,16 +338,14 @@ const processBatch = async () => {
     return;
   }
 
+  await refreshRuntimeRules();
+  if (extensionContextInvalidated) {
+    return;
+  }
+
   const signalsByUnit = new Map<string, HTMLElement>();
   const itemByUnitId = new Map<string, PostSignals>();
   const items: PostSignals[] = [];
-  for (const unit of batch) {
-    const signals = unitExtractor.extract(unit);
-    signalsByUnit.set(signals.unitId, unit);
-    itemByUnitId.set(signals.unitId, signals);
-    items.push(signals);
-  }
-
   let applied = 0;
   const actionCounts: Record<string, number> = {};
   const decisionSamples: Array<{
@@ -291,7 +355,58 @@ const processBatch = async () => {
     sourceName: string;
     state: string;
   }> = [];
+
+  const recordDecision = (unit: HTMLElement, signals: PostSignals, decision: ActionDecision) => {
+    applied += 1;
+    unit.dataset.fbcleanHash = signals.canonicalHash;
+    unit.dataset.fbcleanSource = signals.sourceName ?? "";
+    applier.apply(unit, decision, decision.reasonCodes.join(","));
+    const action = decision.action;
+    actionCounts[action] = (actionCounts[action] ?? 0) + 1;
+    decisionSamples.push({
+      unitId: signals.unitId,
+      action,
+      reasonCodes: decision.reasonCodes,
+      sourceName: signals.sourceName ?? "(unknown)",
+      state: unit.dataset.fbcleanState ?? "unknown"
+    });
+  };
+
+  for (const unit of batch) {
+    const signals = unitExtractor.extract(unit);
+    const directDecision = getDirectDecision(signals);
+    if (directDecision) {
+      processed.add(unit);
+      unit.dataset.fbcleanKeepScans = "0";
+      debugState.processedCount += 1;
+      recordDecision(unit, signals, directDecision);
+      continue;
+    }
+    signalsByUnit.set(signals.unitId, unit);
+    itemByUnitId.set(signals.unitId, signals);
+    items.push(signals);
+  }
+
   let hasPendingKeepReeval = false;
+  if (!items.length) {
+    debugState.lastError = "";
+    updateDebugPanel(`ok:${applied}`);
+    debugLog("batch processed directly", {
+      locatedUnits: locatedUnits.length,
+      queuedUnits: units.length,
+      batchSize: batch.length,
+      applied,
+      actionCounts,
+      decisions: decisionSamples
+    });
+
+    if (applied > 0 && units.length > batch.length) {
+      window.setTimeout(() => {
+        void processBatch();
+      }, 50);
+    }
+    return;
+  }
 
   let response: BgResponse;
   try {

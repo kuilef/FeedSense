@@ -5,9 +5,11 @@ import {
   CMF_SPONSORED_DICTIONARY,
   CMF_SUGGESTIONS_DICTIONARY,
   isFollowPost,
+  isPeopleYouMayKnowPost,
   isParticipatePost,
   isReelsAndShortVideosPost,
   isShortReelVideoPost,
+  isSponsoredPaidByPost,
   isSponsoredPost,
   isSuggestedPost
 } from "./cmfCore";
@@ -78,14 +80,18 @@ export class LocalizedMarkerDetector implements MarkerDetector {
     const aggregate = `${textAggregate} ${unitEl.getAttribute("aria-label") ?? ""}`;
     const interactiveTexts = collectInteractiveTexts(unitEl);
 
-    const sponsoredDetected = isSponsoredPost(unitEl) || hasAnyToken(aggregate, CMF_SPONSORED_DICTIONARY);
+    const sponsoredDetected =
+      isSponsoredPost(unitEl) || isSponsoredPaidByPost(unitEl) || hasAnyToken(aggregate, CMF_SPONSORED_DICTIONARY);
     if (sponsoredDetected) {
       flags.isSponsored = true;
       markers.push("SPONSORED_TOKEN");
     }
 
     const suggestedDetected =
-      isSuggestedPost(unitEl) || hasAnyToken(aggregate, CMF_SUGGESTIONS_DICTIONARY) || hasAnyToken(aggregate, LEGACY_SUGGESTED);
+      isSuggestedPost(unitEl) ||
+      isPeopleYouMayKnowPost(unitEl) ||
+      hasAnyToken(aggregate, CMF_SUGGESTIONS_DICTIONARY) ||
+      hasAnyToken(aggregate, LEGACY_SUGGESTED);
     if (suggestedDetected) {
       flags.isSuggested = true;
       markers.push("SUGGESTED_TOKEN");

@@ -469,6 +469,20 @@ export const isParticipatePost = (post: HTMLElement): boolean => {
   return participateBlocks.length === 1;
 };
 
+export const isPeopleYouMayKnowPost = (post: HTMLElement): boolean => {
+  const links = post.querySelectorAll('a[href*="/friends/"][role="link"]');
+  return links.length > 0;
+};
+
+export const isSponsoredPaidByPost = (post: HTMLElement): boolean => {
+  const sponsoredPaidBy = querySelectorAllNoChildren(
+    post,
+    "div:nth-child(2) > div > div:nth-child(2) > span[class] > span[id] > div:nth-child(2)",
+    1
+  );
+  return sponsoredPaidBy.length > 0;
+};
+
 export const collectNewsFeedPosts = (container?: ParentNode): HTMLElement[] => {
   const scope = container ?? getDefaultDocument();
   if (!scope) {

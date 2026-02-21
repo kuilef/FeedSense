@@ -52,3 +52,16 @@ test("does not treat following as follow marker", () => {
   assert.equal(result.flags.isFollowMarked, undefined);
   assert.equal(result.markers.includes("FOLLOW_TOKEN"), false);
 });
+
+test("detects follow token wrapped in punctuation", () => {
+  const detector = new LocalizedMarkerDetector();
+  const fakeEl = {
+    getAttribute: () => null,
+    querySelectorAll: () => []
+  };
+
+  const result = detector.detect(fakeEl, "People you may know (Follow)");
+
+  assert.equal(result.flags.isFollowMarked, true);
+  assert.ok(result.markers.includes("FOLLOW_TOKEN"));
+});

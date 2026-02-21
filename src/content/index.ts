@@ -43,6 +43,9 @@ const unitExtractor = new FacebookUnitExtractor();
 const observer = new ObserverController();
 const applier = new DecisionApplier();
 let extensionContextInvalidated = false;
+let hideFollowMarkedEnabled = true;
+let followSettingFetchedAt = 0;
+const FOLLOW_SETTING_CACHE_TTL_MS = 15_000;
 const DEBUG =
   window.__FB_CLEAN_DEBUG_BUILD__ === true ||
   window.localStorage.getItem("fbclean.debug") === "1" ||
@@ -97,6 +100,27 @@ const handleExtensionContextInvalidated = () => {
   debugState.lastError = "Extension context invalidated. Reload the page after reloading extension.";
   updateDebugPanel("context-invalidated");
   debugWarn("Extension context invalidated. Stop processing until page reload.");
+};
+
+const refreshFollowSetting = async () => {
+  if (Date.now() - followSettingFetchedAt < FOLLOW_SETTING_CACHE_TTL_MS) {
+    return;
+  }
+
+  followSettingFetchedAt = Date.now();
+  try {
+    const response = await sendBgRequest<BgResponse>({ type: "GET_SETTINGS" });
+    if (response.type !== "SETTINGS") {
+      return;
+    }
+    hideFollowMarkedEnabled = response.value.rules.hideFollowMarked !== false;
+  } catch (error) {
+    if (isExtensionContextInvalidatedError(error)) {
+      handleExtensionContextInvalidated();
+      return;
+    }
+    debugWarn("failed to refresh Follow filter setting", error);
+  }
 };
 
 const getDebugSnapshot = (): FeedSenseDebugSnapshot => {
@@ -247,14 +271,76 @@ const processBatch = async () => {
     return;
   }
 
+  await refreshFollowSetting();
+  if (extensionContextInvalidated) {
+    return;
+  }
+
   const signalsByUnit = new Map<string, HTMLElement>();
   const itemByUnitId = new Map<string, PostSignals>();
-  const items: PostSignals[] = batch.map((unit) => {
+  const items: PostSignals[] = [];
+  const directHidden: Array<{ unit: HTMLElement; signals: PostSignals }> = [];
+  for (const unit of batch) {
     const signals = unitExtractor.extract(unit);
+    if (hideFollowMarkedEnabled && signals.isFollowMarked) {
+      directHidden.push({ unit, signals });
+      continue;
+    }
     signalsByUnit.set(signals.unitId, unit);
     itemByUnitId.set(signals.unitId, signals);
-    return signals;
-  });
+    items.push(signals);
+  }
+
+  let applied = 0;
+  const actionCounts: Record<string, number> = {};
+  const decisionSamples: Array<{
+    unitId: string;
+    action: string;
+    reasonCodes: string[];
+    sourceName: string;
+    state: string;
+  }> = [];
+
+  for (const item of directHidden) {
+    const action: ActionDecision = {
+      action: "HIDE",
+      confidence: 1,
+      reasonCodes: ["FOLLOW_DIRECT_HIDE"]
+    };
+    processed.add(item.unit);
+    debugState.processedCount += 1;
+    applied += 1;
+    item.unit.dataset.fbcleanHash = item.signals.canonicalHash;
+    item.unit.dataset.fbcleanSource = item.signals.sourceName ?? "";
+    applier.apply(item.unit, action, action.reasonCodes.join(","));
+    actionCounts.HIDE = (actionCounts.HIDE ?? 0) + 1;
+    decisionSamples.push({
+      unitId: item.signals.unitId,
+      action: action.action,
+      reasonCodes: action.reasonCodes,
+      sourceName: item.signals.sourceName ?? "(unknown)",
+      state: item.unit.dataset.fbcleanState ?? "unknown"
+    });
+  }
+
+  if (!items.length) {
+    debugState.lastError = "";
+    updateDebugPanel(`ok:${applied}`);
+    debugLog("batch processed with direct Follow hide", {
+      locatedUnits: locatedUnits.length,
+      queuedUnits: units.length,
+      batchSize: batch.length,
+      applied,
+      actionCounts,
+      decisions: decisionSamples
+    });
+    if (applied > 0 && units.length > batch.length) {
+      window.setTimeout(() => {
+        void processBatch();
+      }, 50);
+    }
+    return;
+  }
 
   let response: BgResponse;
   try {
@@ -275,15 +361,6 @@ const processBatch = async () => {
     return;
   }
 
-  let applied = 0;
-  const actionCounts: Record<string, number> = {};
-  const decisionSamples: Array<{
-    unitId: string;
-    action: string;
-    reasonCodes: string[];
-    sourceName: string;
-    state: string;
-  }> = [];
   for (const result of response.results) {
     const unit = signalsByUnit.get(result.unitId);
     if (!unit) {

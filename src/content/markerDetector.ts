@@ -6,6 +6,12 @@ const REELS = ["reels", "рилс", "רילס"];
 const FOLLOW_MARKED = ["follow", "подписаться", "עקוב", "לעקוב"];
 
 const normalize = (value: string): string => value.replace(/\s+/g, " ").trim().toLowerCase();
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const matchesTokenBoundary = (text: string, token: string): boolean => {
+  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(token)}($|[^\\p{L}\\p{N}])`, "iu");
+  return pattern.test(text);
+};
 
 const hasFollowToken = (value: string): boolean => {
   const normalized = normalize(value);
@@ -13,16 +19,7 @@ const hasFollowToken = (value: string): boolean => {
     return false;
   }
 
-  return FOLLOW_MARKED.some((token) => {
-    return (
-      normalized === token ||
-      normalized.startsWith(`${token} `) ||
-      normalized.endsWith(` ${token}`) ||
-      normalized.includes(` ${token} `) ||
-      normalized.includes(`· ${token}`) ||
-      normalized.includes(`${token} ·`)
-    );
-  });
+  return FOLLOW_MARKED.some((token) => matchesTokenBoundary(normalized, token));
 };
 
 const collectInteractiveTexts = (unitEl: HTMLElement): string[] => {

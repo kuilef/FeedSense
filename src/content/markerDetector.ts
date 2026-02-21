@@ -3,7 +3,53 @@ import { PostSignals } from "../shared/contracts";
 const SPONSORED = ["sponsored", "реклама", "ממומן"];
 const SUGGESTED = ["suggested for you", "рекомендовано", "מומלץ"];
 const REELS = ["reels", "рилс", "רילס"];
-const FOLLOW_MARKED = ["follow", "подписаться", "подписка", "עקוב", "לעקוב"];
+const FOLLOW_MARKED = ["follow", "подписаться", "עקוב", "לעקוב"];
+
+const normalize = (value: string): string => value.replace(/\s+/g, " ").trim().toLowerCase();
+
+const hasFollowToken = (value: string): boolean => {
+  const normalized = normalize(value);
+  if (!normalized) {
+    return false;
+  }
+
+  return FOLLOW_MARKED.some((token) => {
+    return (
+      normalized === token ||
+      normalized.startsWith(`${token} `) ||
+      normalized.endsWith(` ${token}`) ||
+      normalized.includes(` ${token} `) ||
+      normalized.includes(`· ${token}`) ||
+      normalized.includes(`${token} ·`)
+    );
+  });
+};
+
+const collectInteractiveTexts = (unitEl: HTMLElement): string[] => {
+  const values: string[] = [];
+  const push = (value: string | null | undefined) => {
+    if (!value) {
+      return;
+    }
+    values.push(value);
+  };
+
+  push(unitEl.getAttribute("aria-label"));
+  push(unitEl.getAttribute("title"));
+
+  const elements = unitEl.querySelectorAll<HTMLElement>(
+    'button, [role="button"], a[role="link"], [aria-label], [title], [data-tooltip-content]'
+  );
+  for (let i = 0; i < elements.length; i += 1) {
+    const el = elements[i];
+    push(el.textContent);
+    push(el.getAttribute("aria-label"));
+    push(el.getAttribute("title"));
+    push(el.getAttribute("data-tooltip-content"));
+  }
+
+  return values;
+};
 
 export interface MarkerDetector {
   detect(unitEl: HTMLElement, textAggregate: string): { flags: Partial<PostSignals>; markers: string[] };
@@ -30,7 +76,8 @@ export class LocalizedMarkerDetector implements MarkerDetector {
       markers.push("REELS_TOKEN");
     }
 
-    if (FOLLOW_MARKED.some((token) => lower.includes(token))) {
+    const followTexts = [textAggregate, ...collectInteractiveTexts(unitEl)];
+    if (followTexts.some((value) => hasFollowToken(value))) {
       flags.isFollowMarked = true;
       markers.push("FOLLOW_TOKEN");
     }

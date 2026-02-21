@@ -1,6 +1,8 @@
 export class ObserverController {
   private observer: MutationObserver | null = null;
   private timer: number | null = null;
+  private readonly debounceMs = 120;
+  private readonly observedAttributes = ["aria-label", "aria-description", "title", "data-tooltip-content", "href"];
 
   start(target: HTMLElement, onBatch: () => void): void {
     this.stop();
@@ -8,10 +10,16 @@ export class ObserverController {
       if (this.timer) {
         window.clearTimeout(this.timer);
       }
-      this.timer = window.setTimeout(() => onBatch(), 200);
+      this.timer = window.setTimeout(() => onBatch(), this.debounceMs);
     });
 
-    this.observer.observe(target, { childList: true, subtree: true, characterData: true });
+    this.observer.observe(target, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: this.observedAttributes
+    });
   }
 
   stop(): void {

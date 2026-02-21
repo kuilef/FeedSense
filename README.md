@@ -31,6 +31,26 @@ npm run build
 
 После сборки готовое расширение лежит в `dist/`.
 
+### Debug-сборка
+
+```bash
+npm run build:debug
+```
+
+Debug-версия собирается в `dist-debug/` и показывает диагностическую панель внизу страницы.  
+Также доступны хелперы в консоли страницы:
+
+- `window.__feedsenseDebug.status()`
+- `window.__feedsenseDebug.locateRoot()`
+- `window.__feedsenseDebug.locateUnits()`
+- `window.__feedsenseDebug.processNow()`
+
+Примечание: в обычной `page console` Chrome content-script работает в isolated world, поэтому `window.__feedsenseDebug` может быть `undefined`.
+Для page console используйте:
+
+- `JSON.parse(document.getElementById("fbclean-debug-state")?.getAttribute("data-json") ?? "null")`
+- `window.dispatchEvent(new CustomEvent("feedsense:processNow"))`
+
 ### 3) Установить в Chrome
 
 1. Откройте `chrome://extensions`.

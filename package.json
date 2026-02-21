@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:debug": "FEEDSENSE_DEBUG=1 node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test tests/**/*.test.mjs"
   },

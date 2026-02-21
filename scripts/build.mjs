@@ -4,10 +4,11 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const outdir = "dist";
+const isDebugBuild = process.env.FEEDSENSE_DEBUG === "1";
+const outdir = isDebugBuild ? "dist-debug" : "dist";
 
 await rm(outdir, { recursive: true, force: true });
-await execFileAsync("tsc", ["-p", "tsconfig.build.json"]);
+await execFileAsync("tsc", ["-p", "tsconfig.build.json", "--outDir", outdir]);
 
 const needsJsExtension = /^\.{1,2}\//;
 
@@ -37,11 +38,44 @@ const patchImports = async (dir) => {
 
 await patchImports(outdir);
 
-const assets = ["src/manifest.json", "src/options/index.html"];
-for (const asset of assets) {
-  const target = asset.replace(/^src\//, `${outdir}/`);
-  await mkdir(dirname(target), { recursive: true });
-  await cp(asset, target);
+const manifestSource = JSON.parse(await readFile("src/manifest.json", "utf8"));
+if (isDebugBuild) {
+  manifestSource.name = `${manifestSource.name} Debug`;
+  manifestSource.description = `[DEBUG] ${manifestSource.description}`;
 }
 
-console.log("Build completed. Load dist/ as unpacked extension in Chrome.");
+for (const contentScript of manifestSource.content_scripts ?? []) {
+  contentScript.js = ["content/loader.js"];
+}
+
+const manifestTarget = `${outdir}/manifest.json`;
+await mkdir(dirname(manifestTarget), { recursive: true });
+await writeFile(manifestTarget, JSON.stringify(manifestSource, null, 2), "utf8");
+
+const contentLoader = `
+(() => {
+  const load = async () => {
+    try {
+      if (${isDebugBuild ? "true" : "false"}) {
+        window.__FB_CLEAN_DEBUG_BUILD__ = true;
+        console.info("[FeedSense Debug] loader enabled", location.href);
+      }
+      await import(chrome.runtime.getURL("content/index.js"));
+    } catch (error) {
+      console.error("[FeedSense] content loader failed", error);
+    }
+  };
+  void load();
+})();
+`;
+
+const loaderTarget = `${outdir}/content/loader.js`;
+await mkdir(dirname(loaderTarget), { recursive: true });
+await writeFile(loaderTarget, contentLoader.trimStart(), "utf8");
+
+const htmlAsset = "src/options/index.html";
+const htmlTarget = htmlAsset.replace(/^src\//, `${outdir}/`);
+await mkdir(dirname(htmlTarget), { recursive: true });
+await cp(htmlAsset, htmlTarget);
+
+console.log(`Build completed. Load ${outdir}/ as unpacked extension in Chrome.`);

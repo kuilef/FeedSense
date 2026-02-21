@@ -196,6 +196,21 @@ const findFeedUnitContainer = (element: HTMLElement, root: HTMLElement): HTMLEle
   return null;
 };
 
+const normalizeLocatedUnits = (root: HTMLElement, units: HTMLElement[]): HTMLElement[] => {
+  const seen = new Set<HTMLElement>();
+  const normalized: HTMLElement[] = [];
+  for (let i = 0; i < units.length; i += 1) {
+    const raw = units[i];
+    const unit = findFeedUnitContainer(raw, root) ?? raw;
+    if (seen.has(unit)) {
+      continue;
+    }
+    seen.add(unit);
+    normalized.push(unit);
+  }
+  return normalized;
+};
+
 const shouldMaskPendingUnit = (unit: HTMLElement): boolean => {
   if (processed.has(unit) || unit.dataset.fbcleanProcessed === "1") {
     return false;
@@ -603,7 +618,7 @@ const processBatch = async () => {
   }
 
   const sweptHidden = sweepAndHideDirectUnits(root);
-  const locatedUnits = unitLocator.locateUnits(root);
+  const locatedUnits = normalizeLocatedUnits(root, unitLocator.locateUnits(root));
   const units = locatedUnits.filter((unit) => {
     if (processed.has(unit) || unit.dataset.fbcleanProcessed === "1") {
       return false;
@@ -795,7 +810,7 @@ const bootstrap = () => {
     return;
   }
 
-  const initialUnits = unitLocator.locateUnits(root).slice(0, BOOTSTRAP_PENDING_MASK_LIMIT);
+  const initialUnits = normalizeLocatedUnits(root, unitLocator.locateUnits(root)).slice(0, BOOTSTRAP_PENDING_MASK_LIMIT);
   maskUnitsAsPending(initialUnits);
 
   observer.start(

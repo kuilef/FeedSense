@@ -390,6 +390,56 @@ const isSponsoredByLinkStructure = (post: HTMLElement): boolean => {
   return false;
 };
 
+const isSponsoredByAccessibilityLabels = (post: HTMLElement, doc: Document | null): boolean => {
+  const candidates: string[] = [];
+  const push = (value: string | null | undefined) => {
+    if (!value) {
+      return;
+    }
+    candidates.push(value);
+  };
+
+  push(post.getAttribute("aria-label"));
+  push(post.getAttribute("aria-description"));
+  push(post.getAttribute("title"));
+  push(post.getAttribute("data-tooltip-content"));
+
+  const nodes = post.querySelectorAll<HTMLElement>(
+    "[aria-label], [aria-description], [title], [data-tooltip-content], [aria-labelledby]"
+  );
+  const max = Math.min(nodes.length, 240);
+  for (let index = 0; index < max; index += 1) {
+    const node = nodes[index];
+    push(node.getAttribute("aria-label"));
+    push(node.getAttribute("aria-description"));
+    push(node.getAttribute("title"));
+    push(node.getAttribute("data-tooltip-content"));
+
+    const labelledBy = node.getAttribute("aria-labelledby");
+    if (!doc || !labelledBy) {
+      continue;
+    }
+    const ids = labelledBy.split(/\s+/).map((value) => value.trim()).filter(Boolean);
+    for (let idIndex = 0; idIndex < ids.length; idIndex += 1) {
+      const labelNode = doc.getElementById(ids[idIndex]);
+      if (!labelNode) {
+        continue;
+      }
+      push(labelNode.textContent);
+      push(labelNode.getAttribute("aria-label"));
+      push(labelNode.getAttribute("title"));
+    }
+  }
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    if (hasDictionaryToken(candidates[index], CMF_SPONSORED_DICTIONARY)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 export const isSponsoredPost = (post: HTMLElement): boolean => {
   const doc = post.ownerDocument ?? getDefaultDocument();
 
@@ -406,6 +456,10 @@ export const isSponsoredPost = (post: HTMLElement): boolean => {
   }
 
   if (isSponsoredByLinkStructure(post)) {
+    return true;
+  }
+
+  if (isSponsoredByAccessibilityLabels(post, doc)) {
     return true;
   }
 

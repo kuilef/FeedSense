@@ -4,9 +4,14 @@ export class ObserverController {
   private readonly debounceMs = 120;
   private readonly observedAttributes = ["aria-label", "aria-description", "title", "data-tooltip-content", "href"];
 
-  start(target: HTMLElement, onBatch: () => void): void {
+  start(
+    target: HTMLElement,
+    onBatch: () => void,
+    onMutations?: (records: MutationRecord[]) => void
+  ): void {
     this.stop();
-    this.observer = new MutationObserver(() => {
+    this.observer = new MutationObserver((records) => {
+      onMutations?.(records);
       if (this.timer) {
         window.clearTimeout(this.timer);
       }

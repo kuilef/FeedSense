@@ -76,6 +76,9 @@ const FEED_UNIT_CONTAINER_SELECTORS = [
   'div[aria-posinset]',
   'div[aria-describedby]'
 ] as const;
+const FEED_UNIT_CONTAINER_QUERY = FEED_UNIT_CONTAINER_SELECTORS.join(", ");
+const PENDING_MASK_MUTATION_SCAN_LIMIT = 80;
+const BOOTSTRAP_PENDING_MASK_LIMIT = 40;
 const normalizeSourceName = (name: string | undefined): string => name?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
 type RuntimeRules = Pick<
   SettingsV1["rules"],
@@ -191,6 +194,90 @@ const findFeedUnitContainer = (element: HTMLElement, root: HTMLElement): HTMLEle
     return container.closest<HTMLElement>('[role="article"]') ?? container;
   }
   return null;
+};
+
+const shouldMaskPendingUnit = (unit: HTMLElement): boolean => {
+  if (processed.has(unit) || unit.dataset.fbcleanProcessed === "1") {
+    return false;
+  }
+
+  const state = unit.dataset.fbcleanState ?? "";
+  if (state === "hide" || state === "collapse" || state === "tldr") {
+    return false;
+  }
+
+  const keepScans = Number.parseInt(unit.dataset.fbcleanKeepScans ?? "0", 10);
+  if (Number.isFinite(keepScans) && keepScans > 0) {
+    return false;
+  }
+
+  return true;
+};
+
+const maskUnitsAsPending = (units: Iterable<HTMLElement>): number => {
+  let masked = 0;
+  for (const unit of units) {
+    if (!shouldMaskPendingUnit(unit) || unit.dataset.fbcleanPending === "1") {
+      continue;
+    }
+    unit.classList.add("fbclean-pending");
+    unit.dataset.fbcleanPending = "1";
+    masked += 1;
+  }
+  return masked;
+};
+
+const maskPendingUnitsFromMutations = (root: HTMLElement, records: MutationRecord[]): number => {
+  const candidates = new Set<HTMLElement>();
+  for (let i = 0; i < records.length; i += 1) {
+    const record = records[i];
+    if (record.type !== "childList" || record.addedNodes.length === 0) {
+      continue;
+    }
+
+    for (let j = 0; j < record.addedNodes.length; j += 1) {
+      const node = record.addedNodes[j];
+      if (!(node instanceof HTMLElement)) {
+        continue;
+      }
+
+      const directUnit = findFeedUnitContainer(node, root);
+      if (directUnit) {
+        candidates.add(directUnit);
+      }
+
+      const descendants = node.querySelectorAll<HTMLElement>(FEED_UNIT_CONTAINER_QUERY);
+      const max = Math.min(descendants.length, PENDING_MASK_MUTATION_SCAN_LIMIT);
+      for (let k = 0; k < max; k += 1) {
+        const unit = descendants[k].closest<HTMLElement>('[role="article"]') ?? descendants[k];
+        if (!root.contains(unit)) {
+          continue;
+        }
+        candidates.add(unit);
+      }
+    }
+  }
+
+  if (!candidates.size) {
+    return 0;
+  }
+  return maskUnitsAsPending(candidates);
+};
+
+const clearPendingMasks = (scope: ParentNode): number => {
+  const pendingUnits = scope.querySelectorAll<HTMLElement>(".fbclean-pending");
+  let cleared = 0;
+  for (let i = 0; i < pendingUnits.length; i += 1) {
+    const unit = pendingUnits[i];
+    const state = unit.dataset.fbcleanState ?? "";
+    if (state === "hide" || state === "collapse" || state === "tldr") {
+      continue;
+    }
+    unit.classList.remove("fbclean-pending");
+    unit.dataset.fbcleanPending = "0";
+    cleared += 1;
+  }
+  return cleared;
 };
 
 const getUnitFingerprint = (unit: HTMLElement): string => {
@@ -311,6 +398,7 @@ const handleExtensionContextInvalidated = () => {
   }
   extensionContextInvalidated = true;
   observer.stop();
+  clearPendingMasks(document);
   debugState.lastError = "Extension context invalidated. Reload the page after reloading extension.";
   updateDebugPanel("context-invalidated");
   debugLog("Extension context invalidated. Stop processing until page reload.");
@@ -436,6 +524,7 @@ const injectStyles = () => {
   const style = document.createElement("style");
   style.id = "fbclean-style";
   style.textContent = `
+  .fbclean-pending { visibility: hidden !important; }
   .fbclean-hide { display: none !important; }
   .fbclean-collapse { max-height: 64px; overflow: hidden; position: relative; }
   .fbclean-collapse::after { content: "Свернуто FeedSense"; position: absolute; bottom: 0; right: 0; background: #fff; padding: 2px 8px; font-size: 11px; }
@@ -536,6 +625,7 @@ const processBatch = async () => {
   debugState.lastBatchSize = batch.length;
 
   if (!batch.length) {
+    clearPendingMasks(root);
     updateDebugPanel(sweptHidden > 0 ? `sweep:${sweptHidden}` : "empty-batch");
     if (sweptHidden > 0) {
       debugLog("direct sweep hid units", { hidden: sweptHidden });
@@ -612,15 +702,18 @@ const processBatch = async () => {
   let response: BgResponse;
   try {
     if (!hasRuntimeContext()) {
+      clearPendingMasks(root);
       handleExtensionContextInvalidated();
       return;
     }
     response = await sendBgRequest<BgResponse>({ type: "EVALUATE_BATCH", items, settingsVersion: 1 });
   } catch (error) {
     if (isExtensionContextInvalidatedError(error)) {
+      clearPendingMasks(root);
       handleExtensionContextInvalidated();
       return;
     }
+    clearPendingMasks(root);
     debugState.lastError = error instanceof Error ? error.message : String(error);
     updateDebugPanel("background-error");
     debugWarn("sendBgRequest failed", error);
@@ -628,6 +721,7 @@ const processBatch = async () => {
   }
 
   if (response.type !== "EVALUATE_BATCH_RESULT") {
+    clearPendingMasks(root);
     updateDebugPanel("unexpected-response");
     return;
   }
@@ -701,9 +795,18 @@ const bootstrap = () => {
     return;
   }
 
-  observer.start(root, () => {
-    void processBatch();
-  });
+  const initialUnits = unitLocator.locateUnits(root).slice(0, BOOTSTRAP_PENDING_MASK_LIMIT);
+  maskUnitsAsPending(initialUnits);
+
+  observer.start(
+    root,
+    () => {
+      void processBatch();
+    },
+    (records) => {
+      maskPendingUnitsFromMutations(root, records);
+    }
+  );
 
   updateDebugPanel("observer-started");
   void processBatch();

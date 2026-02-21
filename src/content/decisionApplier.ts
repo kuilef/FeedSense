@@ -2,7 +2,8 @@ import { ActionDecision } from "../shared/contracts";
 
 export class DecisionApplier {
   apply(unitEl: HTMLElement, decision: ActionDecision, debugReason?: string): void {
-    unitEl.classList.remove("fbclean-hide", "fbclean-collapse");
+    unitEl.classList.remove("fbclean-hide", "fbclean-collapse", "fbclean-pending");
+    unitEl.dataset.fbcleanPending = "0";
 
     switch (decision.action) {
       case "KEEP":

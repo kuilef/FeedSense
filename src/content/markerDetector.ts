@@ -58,9 +58,10 @@ export class LocalizedMarkerDetector implements MarkerDetector {
 
     const aggregate = `${textAggregate} ${unitEl.getAttribute("aria-label") ?? ""}`;
     const interactiveTexts = collectInteractiveTexts(unitEl);
+    const sponsoredByText = [aggregate, ...interactiveTexts].some((value) => hasAnyToken(value, CMF_SPONSORED_DICTIONARY));
 
     const sponsoredDetected =
-      isSponsoredPost(unitEl) || isSponsoredPaidByPost(unitEl) || hasAnyToken(aggregate, CMF_SPONSORED_DICTIONARY);
+      isSponsoredPost(unitEl) || isSponsoredPaidByPost(unitEl) || sponsoredByText;
     if (sponsoredDetected) {
       flags.isSponsored = true;
       markers.push("SPONSORED_TOKEN");

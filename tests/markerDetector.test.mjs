@@ -70,6 +70,23 @@ test("detects follow marker when token is split by spaces", () => {
   assert.equal(result.flags.isFollowMarked, true);
 });
 
+test("detects sponsored marker when token is split by spaces in interactive text", () => {
+  const detector = new LocalizedMarkerDetector();
+  const fakeEl = createFakeEl({
+    interactive: [
+      {
+        textContent: "S p o n s o r e d",
+        getAttribute: () => null
+      }
+    ]
+  });
+
+  const result = detector.detect(fakeEl, "Regular post text");
+
+  assert.equal(result.flags.isSponsored, true);
+  assert.ok(result.markers.includes("SPONSORED_TOKEN"));
+});
+
 test("detects join marker from interactive text", () => {
   const detector = new LocalizedMarkerDetector();
   const fakeEl = createFakeEl({

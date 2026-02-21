@@ -297,6 +297,14 @@ const isExtensionContextInvalidatedError = (error: unknown): boolean => {
   return message.toLowerCase().includes("extension context invalidated");
 };
 
+const hasRuntimeContext = (): boolean => {
+  try {
+    return Boolean(chrome.runtime?.id);
+  } catch {
+    return false;
+  }
+};
+
 const handleExtensionContextInvalidated = () => {
   if (extensionContextInvalidated) {
     return;
@@ -305,7 +313,7 @@ const handleExtensionContextInvalidated = () => {
   observer.stop();
   debugState.lastError = "Extension context invalidated. Reload the page after reloading extension.";
   updateDebugPanel("context-invalidated");
-  debugWarn("Extension context invalidated. Stop processing until page reload.");
+  debugLog("Extension context invalidated. Stop processing until page reload.");
 };
 
 const refreshRuntimeRules = async () => {
@@ -315,6 +323,10 @@ const refreshRuntimeRules = async () => {
 
   rulesFetchedAt = Date.now();
   try {
+    if (!hasRuntimeContext()) {
+      handleExtensionContextInvalidated();
+      return;
+    }
     const response = await sendBgRequest<BgResponse>({ type: "GET_SETTINGS" });
     if (response.type !== "SETTINGS") {
       return;
@@ -599,6 +611,10 @@ const processBatch = async () => {
 
   let response: BgResponse;
   try {
+    if (!hasRuntimeContext()) {
+      handleExtensionContextInvalidated();
+      return;
+    }
     response = await sendBgRequest<BgResponse>({ type: "EVALUATE_BATCH", items, settingsVersion: 1 });
   } catch (error) {
     if (isExtensionContextInvalidatedError(error)) {

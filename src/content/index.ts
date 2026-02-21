@@ -524,7 +524,7 @@ const injectStyles = () => {
   const style = document.createElement("style");
   style.id = "fbclean-style";
   style.textContent = `
-  .fbclean-pending { visibility: hidden !important; }
+  .fbclean-pending { opacity: 0 !important; pointer-events: none !important; }
   .fbclean-hide { display: none !important; }
   .fbclean-collapse { max-height: 64px; overflow: hidden; position: relative; }
   .fbclean-collapse::after { content: "Свернуто FeedSense"; position: absolute; bottom: 0; right: 0; background: #fff; padding: 2px 8px; font-size: 11px; }

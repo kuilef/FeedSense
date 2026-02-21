@@ -1,6 +1,7 @@
 import { PostSignals } from "../shared/contracts";
 import {
   CMF_FOLLOW_DICTIONARY,
+  CMF_JOIN_DICTIONARY,
   CMF_REELS_AND_SHORT_VIDEOS_DICTIONARY,
   CMF_SPONSORED_DICTIONARY,
   CMF_SUGGESTIONS_DICTIONARY,
@@ -86,7 +87,9 @@ export class LocalizedMarkerDetector implements MarkerDetector {
     }
 
     const followByStructure = isFollowPost(unitEl) || isParticipatePost(unitEl);
-    const followByText = [aggregate, ...interactiveTexts].some((value) => hasAnyToken(value, CMF_FOLLOW_DICTIONARY));
+    const followByText = [aggregate, ...interactiveTexts].some(
+      (value) => hasAnyToken(value, CMF_FOLLOW_DICTIONARY) || hasAnyToken(value, CMF_JOIN_DICTIONARY)
+    );
     if (followByStructure || followByText) {
       flags.isFollowMarked = true;
       markers.push(followByStructure ? "FOLLOW_STRUCTURE" : "FOLLOW_TOKEN");

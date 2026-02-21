@@ -1,5 +1,5 @@
 import { ActionDecision, BgResponse, PostSignals, SettingsV1 } from "../shared/contracts";
-import { CMF_FOLLOW_DICTIONARY } from "./cmfCore";
+import { CMF_FOLLOW_DICTIONARY, CMF_JOIN_DICTIONARY } from "./cmfCore";
 import { DecisionApplier } from "./decisionApplier";
 import { FacebookFeedLocator } from "./feedLocator";
 import { sendBgRequest } from "./messaging/bgClient";
@@ -127,6 +127,10 @@ const hasFollowToken = (value: string): boolean => {
   return hasAnyToken(value, CMF_FOLLOW_DICTIONARY);
 };
 
+const hasJoinToken = (value: string): boolean => {
+  return hasAnyToken(value, CMF_JOIN_DICTIONARY);
+};
+
 const isFollowCtaElement = (element: HTMLElement): boolean => {
   const texts = [
     element.textContent ?? "",
@@ -135,7 +139,7 @@ const isFollowCtaElement = (element: HTMLElement): boolean => {
     element.getAttribute("title") ?? "",
     element.getAttribute("data-tooltip-content") ?? ""
   ];
-  return texts.some((value) => hasFollowToken(value));
+  return texts.some((value) => hasFollowToken(value) || hasJoinToken(value));
 };
 
 const findFeedUnitContainer = (element: HTMLElement, root: HTMLElement): HTMLElement | null => {
@@ -200,10 +204,30 @@ const sweepAndHideFollowUnits = (root: HTMLElement): number => {
       continue;
     }
 
+    const ctaTexts = [
+      element.textContent ?? "",
+      element.getAttribute("aria-label") ?? "",
+      element.getAttribute("aria-description") ?? "",
+      element.getAttribute("title") ?? "",
+      element.getAttribute("data-tooltip-content") ?? ""
+    ];
+    const hasFollow = ctaTexts.some((value) => hasFollowToken(value));
+    const hasJoin = ctaTexts.some((value) => hasJoinToken(value));
+    if (!hasFollow && !hasJoin) {
+      continue;
+    }
+
+    if (hasJoin && !hasFollow) {
+      const isGroupUnit = Boolean(unit.querySelector('a[href*="/groups/"]'));
+      if (!isGroupUnit) {
+        continue;
+      }
+    }
+
     const decision: ActionDecision = {
       action: "HIDE",
       confidence: 1,
-      reasonCodes: ["DIRECT_FOLLOW_CTA_SWEEP"]
+      reasonCodes: [hasJoin && !hasFollow ? "DIRECT_GROUP_JOIN_CTA_SWEEP" : "DIRECT_FOLLOW_CTA_SWEEP"]
     };
     applier.apply(unit, decision, decision.reasonCodes.join(","));
     unit.dataset.fbcleanKeepScans = "0";

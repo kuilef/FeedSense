@@ -70,6 +70,22 @@ test("detects follow marker when token is split by spaces", () => {
   assert.equal(result.flags.isFollowMarked, true);
 });
 
+test("detects join marker from interactive text", () => {
+  const detector = new LocalizedMarkerDetector();
+  const fakeEl = createFakeEl({
+    interactive: [
+      {
+        textContent: "Join",
+        getAttribute: () => null
+      }
+    ]
+  });
+
+  const result = detector.detect(fakeEl, "Group recommendation");
+
+  assert.equal(result.flags.isFollowMarked, true);
+});
+
 test("detects follow marker with zero-width characters", () => {
   const detector = new LocalizedMarkerDetector();
   const fakeEl = createFakeEl({

@@ -116,6 +116,14 @@ export const CMF_FOLLOW_DICTIONARY = [
   "追蹤"
 ].map(trimToken);
 
+export const CMF_JOIN_DICTIONARY = [
+  "join",
+  "присоединиться",
+  "вступить",
+  "присоединяйтесь",
+  "join group"
+].map(trimToken);
+
 export const CMF_NEWS_FEED_POST_QUERIES = [
   'h3[dir="auto"] ~ div:not([class]) > div > div > div > div > div',
   'h2[dir="auto"] ~ div:not([class]) > div > div > div > div > div',

@@ -1,8 +1,5 @@
 import { ActionDecision, PolicyOutcome, PostLabel, PostSignals, SettingsV1 } from "../../shared/contracts";
 
-const TEMP_GROUP_SOURCE_NAME = "Сам себе Ацмаи - сообщество русскоязычных владельцев бизнеса в Израиле";
-const TEMP_GROUP_PATH = "/groups/934696157280442";
-
 const normalizeSourceName = (name: string | undefined): string => name?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
 
 export interface PolicyEngine {
@@ -40,14 +37,10 @@ export class DefaultPolicyEngine implements PolicyEngine {
       return "ALLOW";
     }
 
-    const isTargetGroupPage = this.isTargetGroupPage(signals.url);
-    const sourceMatchedTemporaryGroupRule = this.sourceNameMatches(TEMP_GROUP_SOURCE_NAME, signals.sourceName);
-    const sourceMatchedBlock =
-      settings.rules.blockSources.some((source) => this.sourceNameMatches(source.name, signals.sourceName)) ||
-      sourceMatchedTemporaryGroupRule;
-    const bypassTemporaryGroupBlock = isTargetGroupPage && sourceMatchedTemporaryGroupRule;
-
-    if (sourceMatchedBlock && !bypassTemporaryGroupBlock) {
+    const sourceMatchedBlock = settings.rules.blockSources.some((source) =>
+      this.sourceNameMatches(source.name, signals.sourceName)
+    );
+    if (sourceMatchedBlock) {
       return "HIDE";
     }
 
@@ -81,19 +74,6 @@ export class DefaultPolicyEngine implements PolicyEngine {
 
   private sourceNameMatches(ruleSourceName: string, actualSourceName: string | undefined): boolean {
     return normalizeSourceName(ruleSourceName) === normalizeSourceName(actualSourceName);
-  }
-
-  private isTargetGroupPage(url: string | undefined): boolean {
-    if (!url) {
-      return false;
-    }
-
-    try {
-      const parsedUrl = new URL(url);
-      return parsedUrl.hostname.endsWith("facebook.com") && parsedUrl.pathname.startsWith(TEMP_GROUP_PATH);
-    } catch {
-      return false;
-    }
   }
 
   private toAction(label: PostLabel, settings: SettingsV1): ActionDecision {

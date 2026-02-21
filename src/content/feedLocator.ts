@@ -4,6 +4,11 @@ export interface FeedLocator {
 
 export class FacebookFeedLocator implements FeedLocator {
   locateFeedRoot(doc: Document): HTMLElement | null {
+    const mainColumn = doc.querySelector<HTMLElement>('div[role="navigation"] ~ div[role="main"]');
+    if (mainColumn) {
+      return mainColumn;
+    }
+
     const roleFeed = doc.querySelector<HTMLElement>('[role="feed"]');
     if (roleFeed) {
       return roleFeed;

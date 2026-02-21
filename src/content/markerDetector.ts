@@ -1,9 +1,19 @@
 import { PostSignals } from "../shared/contracts";
+import {
+  CMF_FOLLOW_DICTIONARY,
+  CMF_REELS_AND_SHORT_VIDEOS_DICTIONARY,
+  CMF_SPONSORED_DICTIONARY,
+  CMF_SUGGESTIONS_DICTIONARY,
+  isFollowPost,
+  isParticipatePost,
+  isReelsAndShortVideosPost,
+  isShortReelVideoPost,
+  isSponsoredPost,
+  isSuggestedPost
+} from "./cmfCore";
 
-const SPONSORED = ["sponsored", "реклама", "ממומן"];
-const SUGGESTED = ["suggested for you", "рекомендовано", "מומלץ"];
-const REELS = ["reels", "рилс", "רילס"];
-const FOLLOW_MARKED = ["follow", "подписаться", "עקוב", "לעקוב"];
+const LEGACY_SUGGESTED = ["suggested for you", "рекомендовано", "מומלץ"];
+const LEGACY_REELS = ["reels", "reel", "рилс", "רילס"];
 
 const normalize = (value: string): string => value.replace(/\s+/g, " ").trim().toLowerCase();
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -13,13 +23,21 @@ const matchesTokenBoundary = (text: string, token: string): boolean => {
   return pattern.test(text);
 };
 
-const hasFollowToken = (value: string): boolean => {
+const hasToken = (value: string, token: string): boolean => {
   const normalized = normalize(value);
   if (!normalized) {
     return false;
   }
 
-  return FOLLOW_MARKED.some((token) => matchesTokenBoundary(normalized, token));
+  if (/^[a-z]+$/i.test(token)) {
+    return matchesTokenBoundary(normalized, token);
+  }
+
+  return normalized.includes(token) || matchesTokenBoundary(normalized, token);
+};
+
+const hasAnyToken = (value: string, tokens: string[]): boolean => {
+  return tokens.some((token) => hasToken(value, token.toLowerCase()));
 };
 
 const collectInteractiveTexts = (unitEl: HTMLElement): string[] => {
@@ -54,30 +72,40 @@ export interface MarkerDetector {
 
 export class LocalizedMarkerDetector implements MarkerDetector {
   detect(unitEl: HTMLElement, textAggregate: string): { flags: Partial<PostSignals>; markers: string[] } {
-    const lower = `${textAggregate} ${unitEl.getAttribute("aria-label") ?? ""}`.toLowerCase();
     const markers: string[] = [];
     const flags: Partial<PostSignals> = {};
 
-    if (SPONSORED.some((token) => lower.includes(token))) {
+    const aggregate = `${textAggregate} ${unitEl.getAttribute("aria-label") ?? ""}`;
+    const interactiveTexts = collectInteractiveTexts(unitEl);
+
+    const sponsoredDetected = isSponsoredPost(unitEl) || hasAnyToken(aggregate, CMF_SPONSORED_DICTIONARY);
+    if (sponsoredDetected) {
       flags.isSponsored = true;
       markers.push("SPONSORED_TOKEN");
     }
 
-    if (SUGGESTED.some((token) => lower.includes(token))) {
+    const suggestedDetected =
+      isSuggestedPost(unitEl) || hasAnyToken(aggregate, CMF_SUGGESTIONS_DICTIONARY) || hasAnyToken(aggregate, LEGACY_SUGGESTED);
+    if (suggestedDetected) {
       flags.isSuggested = true;
       markers.push("SUGGESTED_TOKEN");
     }
 
-    if (REELS.some((token) => lower.includes(token))) {
+    const reelsDetected =
+      isReelsAndShortVideosPost(unitEl) ||
+      isShortReelVideoPost(unitEl) ||
+      hasAnyToken(aggregate, CMF_REELS_AND_SHORT_VIDEOS_DICTIONARY) ||
+      hasAnyToken(aggregate, LEGACY_REELS);
+    if (reelsDetected) {
       flags.isReel = true;
       markers.push("REELS_TOKEN");
     }
 
-    const rawText = (unitEl.textContent ?? "").slice(0, 12000);
-    const followTexts = [textAggregate, rawText, ...collectInteractiveTexts(unitEl)];
-    if (followTexts.some((value) => hasFollowToken(value))) {
+    const followByStructure = isFollowPost(unitEl) || isParticipatePost(unitEl);
+    const followByText = [aggregate, ...interactiveTexts].some((value) => hasAnyToken(value, CMF_FOLLOW_DICTIONARY));
+    if (followByStructure || followByText) {
       flags.isFollowMarked = true;
-      markers.push("FOLLOW_TOKEN");
+      markers.push(followByStructure ? "FOLLOW_STRUCTURE" : "FOLLOW_TOKEN");
     }
 
     return { flags, markers };

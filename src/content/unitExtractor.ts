@@ -1,4 +1,5 @@
 import { PostSignals } from "../shared/contracts";
+import { extractTextContent, getNewsFeedBlocksQuery } from "./cmfCore";
 import { LocalizedMarkerDetector } from "./markerDetector";
 
 export interface UnitExtractor {
@@ -35,11 +36,22 @@ const hashString = (value: string): string => {
   return `${hash}`;
 };
 
+const buildTextAggregate = (unitEl: HTMLElement): { text: string; confidence: number } => {
+  const extracted = extractTextContent(unitEl, getNewsFeedBlocksQuery(unitEl), 3);
+  if (extracted.length > 0) {
+    const text = normalize(extracted.join(" ")).slice(0, 3000);
+    return { text, confidence: text.length > 60 ? 0.85 : 0.65 };
+  }
+
+  const fallbackText = normalize(unitEl.innerText || unitEl.textContent || "").slice(0, 3000);
+  return { text: fallbackText, confidence: fallbackText.length > 40 ? 0.7 : 0.35 };
+};
+
 export class FacebookUnitExtractor implements UnitExtractor {
   private markerDetector = new LocalizedMarkerDetector();
 
   extract(unitEl: HTMLElement): PostSignals {
-    const text = normalize(unitEl.innerText).slice(0, 3000);
+    const { text, confidence } = buildTextAggregate(unitEl);
     const markers = this.markerDetector.detect(unitEl, text);
     const canonicalHash = hashString(text);
     const source = this.extractSource(unitEl);
@@ -49,7 +61,7 @@ export class FacebookUnitExtractor implements UnitExtractor {
       canonicalHash,
       url: window.location.href,
       text,
-      extractionConfidence: text.length > 40 ? 0.7 : 0.35,
+      extractionConfidence: confidence,
       markers: markers.markers,
       ...source,
       ...markers.flags

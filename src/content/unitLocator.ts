@@ -1,9 +1,16 @@
+import { collectNewsFeedPosts } from "./cmfCore";
+
 export interface UnitLocator {
   locateUnits(feedRoot: HTMLElement): HTMLElement[];
 }
 
 export class FacebookUnitLocator implements UnitLocator {
   locateUnits(feedRoot: HTMLElement): HTMLElement[] {
+    const posts = collectNewsFeedPosts(feedRoot.ownerDocument ?? undefined);
+    if (posts.length) {
+      return posts;
+    }
+
     const articles = Array.from(feedRoot.querySelectorAll<HTMLElement>('[role="article"]'));
     if (articles.length) {
       return articles;

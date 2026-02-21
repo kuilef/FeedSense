@@ -60,6 +60,8 @@ const debugState = {
 };
 const DEBUG_STATE_NODE_ID = "fbclean-debug-state";
 const DEBUG_BADGE_ID = "fbclean-debug-badge";
+const MAX_KEEP_REEVALS = 4;
+const KEEP_REEVAL_DELAY_MS = 450;
 
 const debugLog = (...args: unknown[]) => {
   if (!DEBUG) {
@@ -82,6 +84,17 @@ const collectAppliedDecisions = () =>
     reason: unit.dataset.fbcleanReason ?? "",
     source: unit.dataset.fbcleanSource ?? ""
   }));
+
+const getKeepReevalCount = (unit: HTMLElement): number => {
+  const value = Number.parseInt(unit.dataset.fbcleanKeepScans ?? "0", 10);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+};
+
+const incrementKeepReevalCount = (unit: HTMLElement): number => {
+  const next = getKeepReevalCount(unit) + 1;
+  unit.dataset.fbcleanKeepScans = String(next);
+  return next;
+};
 
 const isExtensionContextInvalidatedError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
@@ -236,7 +249,19 @@ const processBatch = async () => {
   }
 
   const locatedUnits = unitLocator.locateUnits(root);
-  const units = locatedUnits.filter((unit) => !processed.has(unit) && unit.dataset.fbcleanProcessed !== "1");
+  const units = locatedUnits.filter((unit) => {
+    if (processed.has(unit) || unit.dataset.fbcleanProcessed === "1") {
+      return false;
+    }
+
+    const scans = getKeepReevalCount(unit);
+    if (scans >= MAX_KEEP_REEVALS) {
+      processed.add(unit);
+      return false;
+    }
+
+    return true;
+  });
   const batch = units.slice(0, 20);
   debugState.totalUnits = locatedUnits.length;
   debugState.queuedUnits = units.length;
@@ -266,6 +291,7 @@ const processBatch = async () => {
     sourceName: string;
     state: string;
   }> = [];
+  let hasPendingKeepReeval = false;
 
   let response: BgResponse;
   try {
@@ -292,19 +318,33 @@ const processBatch = async () => {
       continue;
     }
     const item = itemByUnitId.get(result.unitId);
+    const decision = result.outcome.action as ActionDecision;
+    const action = decision.action;
 
-    processed.add(unit);
-    debugState.processedCount += 1;
     applied += 1;
     unit.dataset.fbcleanHash = item?.canonicalHash ?? "";
     unit.dataset.fbcleanSource = item?.sourceName ?? "";
-    applier.apply(unit, result.outcome.action as ActionDecision, result.outcome.action.reasonCodes.join(","));
-    const action = result.outcome.action.action;
+    applier.apply(unit, decision, decision.reasonCodes.join(","));
+
+    if (action === "KEEP") {
+      const scanCount = incrementKeepReevalCount(unit);
+      if (scanCount >= MAX_KEEP_REEVALS) {
+        processed.add(unit);
+        debugState.processedCount += 1;
+      } else {
+        hasPendingKeepReeval = true;
+      }
+    } else {
+      processed.add(unit);
+      unit.dataset.fbcleanKeepScans = "0";
+      debugState.processedCount += 1;
+    }
+
     actionCounts[action] = (actionCounts[action] ?? 0) + 1;
     decisionSamples.push({
       unitId: result.unitId,
       action,
-      reasonCodes: result.outcome.action.reasonCodes,
+      reasonCodes: decision.reasonCodes,
       sourceName: item?.sourceName ?? "(unknown)",
       state: unit.dataset.fbcleanState ?? "unknown"
     });
@@ -325,6 +365,12 @@ const processBatch = async () => {
     window.setTimeout(() => {
       void processBatch();
     }, 50);
+  }
+
+  if (hasPendingKeepReeval) {
+    window.setTimeout(() => {
+      void processBatch();
+    }, KEEP_REEVAL_DELAY_MS);
   }
 };
 

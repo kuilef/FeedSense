@@ -346,6 +346,14 @@ const isSponsoredByLinkStructure = (post: HTMLElement): boolean => {
     );
   }
 
+  if (!links.length) {
+    links = Array.from(
+      post.querySelectorAll<HTMLAnchorElement>(
+        `a[href*="${SPONSORED_PARAM}"]:not([href^="/groups/"]):not([href*="section_header_type"])`
+      )
+    );
+  }
+
   if (!links.length || links.length >= 10) {
     return false;
   }
@@ -384,7 +392,8 @@ export const isSponsoredPost = (post: HTMLElement): boolean => {
     return true;
   }
 
-  return hasDictionaryToken(post.textContent ?? "", CMF_SPONSORED_DICTIONARY);
+  const aggregateText = `${post.textContent ?? ""} ${post.getAttribute("aria-label") ?? ""} ${post.getAttribute("title") ?? ""}`;
+  return hasDictionaryToken(aggregateText, CMF_SPONSORED_DICTIONARY);
 };
 
 export const isReelsAndShortVideosPost = (post: HTMLElement): boolean => {

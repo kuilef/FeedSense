@@ -11,7 +11,7 @@ export class ObserverController {
       this.timer = window.setTimeout(() => onBatch(), 200);
     });
 
-    this.observer.observe(target, { childList: true, subtree: true });
+    this.observer.observe(target, { childList: true, subtree: true, characterData: true });
   }
 
   stop(): void {

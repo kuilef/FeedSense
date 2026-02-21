@@ -59,6 +59,7 @@ const debugState = {
   note: "booting"
 };
 const DEBUG_STATE_NODE_ID = "fbclean-debug-state";
+const DEBUG_BADGE_ID = "fbclean-debug-badge";
 
 const debugLog = (...args: unknown[]) => {
   if (!DEBUG) {
@@ -180,18 +181,42 @@ const injectStyles = () => {
     white-space: normal;
     pointer-events: none;
   }
+  .fbclean-debug-badge {
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    z-index: 2147483647;
+    background: #0f766e;
+    color: #fff;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font: 600 12px/1 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    pointer-events: none;
+  }
   `;
   document.head.append(style);
 
-  if (DEBUG && !document.getElementById("fbclean-debug-panel")) {
+  if (DEBUG) {
     if (!document.body) {
       return;
     }
-    const panel = document.createElement("div");
-    panel.id = "fbclean-debug-panel";
-    panel.className = "fbclean-debug-panel";
-    document.body.append(panel);
-    updateDebugPanel("panel-ready");
+
+    if (!document.getElementById("fbclean-debug-panel")) {
+      const panel = document.createElement("div");
+      panel.id = "fbclean-debug-panel";
+      panel.className = "fbclean-debug-panel";
+      document.body.append(panel);
+      updateDebugPanel("panel-ready");
+    }
+
+    if (!document.getElementById(DEBUG_BADGE_ID)) {
+      const badge = document.createElement("div");
+      badge.id = DEBUG_BADGE_ID;
+      badge.className = "fbclean-debug-badge";
+      badge.textContent = "FeedSense DEBUG ACTIVE";
+      document.body.append(badge);
+    }
   }
 };
 

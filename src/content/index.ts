@@ -318,6 +318,12 @@ const processBatch = async () => {
     actionCounts,
     decisions: decisionSamples
   });
+
+  if (applied > 0 && units.length > batch.length) {
+    window.setTimeout(() => {
+      void processBatch();
+    }, 50);
+  }
 };
 
 const bootstrap = () => {

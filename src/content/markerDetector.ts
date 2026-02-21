@@ -76,7 +76,8 @@ export class LocalizedMarkerDetector implements MarkerDetector {
       markers.push("REELS_TOKEN");
     }
 
-    const followTexts = [textAggregate, ...collectInteractiveTexts(unitEl)];
+    const rawText = (unitEl.textContent ?? "").slice(0, 12000);
+    const followTexts = [textAggregate, rawText, ...collectInteractiveTexts(unitEl)];
     if (followTexts.some((value) => hasFollowToken(value))) {
       flags.isFollowMarked = true;
       markers.push("FOLLOW_TOKEN");

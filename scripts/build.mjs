@@ -45,12 +45,40 @@ if (isDebugBuild) {
 }
 
 for (const contentScript of manifestSource.content_scripts ?? []) {
-  contentScript.js = isDebugBuild ? ["content/debugBootstrap.js", "content/index.js"] : ["content/index.js"];
+  contentScript.js = ["content/loader.js"];
+}
+
+for (const resourceGroup of manifestSource.web_accessible_resources ?? []) {
+  const current = Array.isArray(resourceGroup.resources) ? resourceGroup.resources : [];
+  resourceGroup.resources = Array.from(
+    new Set([...current, "content/*.js", "content/*/*.js", "content/*/*/*.js", "shared/*.js"])
+  );
 }
 
 const manifestTarget = `${outdir}/manifest.json`;
 await mkdir(dirname(manifestTarget), { recursive: true });
 await writeFile(manifestTarget, JSON.stringify(manifestSource, null, 2), "utf8");
+
+const contentLoader = `
+(() => {
+  const load = async () => {
+    try {
+      if (${isDebugBuild ? "true" : "false"}) {
+        window.__FB_CLEAN_DEBUG_BUILD__ = true;
+        console.info("[FeedSense Debug] loader enabled", location.href);
+      }
+      await import(chrome.runtime.getURL("content/index.js"));
+    } catch (error) {
+      console.error("[FeedSense] content loader failed", error);
+    }
+  };
+  void load();
+})();
+`;
+
+const loaderTarget = `${outdir}/content/loader.js`;
+await mkdir(dirname(loaderTarget), { recursive: true });
+await writeFile(loaderTarget, contentLoader.trimStart(), "utf8");
 
 const htmlAsset = "src/options/index.html";
 const htmlTarget = htmlAsset.replace(/^src\//, `${outdir}/`);

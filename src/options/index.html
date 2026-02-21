@@ -4,25 +4,406 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FeedSense Options</title>
+    <style>
+      :root {
+        --bg: #f2f7fb;
+        --panel: #ffffff;
+        --panel-soft: #f9fbff;
+        --text: #0f172a;
+        --muted: #4b5563;
+        --line: #dbe4ef;
+        --brand: #0f766e;
+        --brand-strong: #115e59;
+        --brand-soft: #e8f8f6;
+        --danger: #b91c1c;
+        --shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 10% 0%, #dff3f8 0%, rgba(223, 243, 248, 0) 45%),
+          radial-gradient(circle at 100% 0%, #d7f7ef 0%, rgba(215, 247, 239, 0) 42%),
+          var(--bg);
+        color: var(--text);
+        font: 14px/1.45 "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
+      }
+
+      .container {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 26px 16px 38px;
+      }
+
+      .hero {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        letter-spacing: -0.02em;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        margin: 2px 0 0;
+      }
+
+      .status {
+        margin: 0;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .status.ok {
+        border-color: #86efac;
+        color: #166534;
+        background: #f0fdf4;
+      }
+
+      .status.error {
+        border-color: #fca5a5;
+        color: var(--danger);
+        background: #fef2f2;
+      }
+
+      form {
+        display: grid;
+        gap: 14px;
+      }
+
+      .card {
+        background: linear-gradient(180deg, var(--panel) 0%, var(--panel-soft) 100%);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px;
+        box-shadow: var(--shadow);
+      }
+
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: 16px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 10px;
+      }
+
+      .grid.two {
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      }
+
+      .field {
+        display: grid;
+        gap: 4px;
+      }
+
+      .field label {
+        font-weight: 600;
+      }
+
+      .hint {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid #c9d7e8;
+        border-radius: 10px;
+        padding: 8px 10px;
+        background: #fff;
+        color: var(--text);
+        font: inherit;
+      }
+
+      textarea {
+        min-height: 88px;
+        resize: vertical;
+      }
+
+      .check {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px 10px;
+        background: #fff;
+      }
+
+      .check input {
+        width: 16px;
+        height: 16px;
+        margin: 0;
+      }
+
+      .actions {
+        position: sticky;
+        bottom: 0;
+        display: flex;
+        gap: 8px;
+        background: rgba(242, 247, 251, 0.95);
+        padding-top: 8px;
+      }
+
+      button {
+        appearance: none;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 9px 14px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .primary {
+        border-color: var(--brand);
+        background: linear-gradient(180deg, #14b8a6 0%, var(--brand) 100%);
+        color: #fff;
+      }
+
+      .primary:hover {
+        background: linear-gradient(180deg, #13a797 0%, var(--brand-strong) 100%);
+      }
+
+      .ghost {
+        background: #fff;
+        color: var(--text);
+      }
+
+      @media (max-width: 700px) {
+        .container {
+          padding: 18px 12px 28px;
+        }
+
+        h1 {
+          font-size: 24px;
+        }
+
+        .actions {
+          flex-wrap: wrap;
+        }
+      }
+    </style>
   </head>
   <body>
-    <h1>FeedSense</h1>
-    <label>
-      Global mode
-      <select id="globalMode">
-        <option value="ON">ON</option>
-        <option value="OFF">OFF</option>
-      </select>
-    </label>
-    <label>
-      Hide sponsored
-      <input id="hideSponsored" type="checkbox" />
-    </label>
-    <label>
-      Hide Follow-marked (not subscribed)
-      <input id="hideFollowMarked" type="checkbox" />
-    </label>
-    <button id="save">Save</button>
+    <div class="container">
+      <header class="hero">
+        <div>
+          <h1>FeedSense Settings</h1>
+          <p class="subtitle">All available runtime options in one page.</p>
+        </div>
+        <p id="status" class="status">Ready</p>
+      </header>
+
+      <form id="settingsForm">
+        <section class="card">
+          <h2>General</h2>
+          <div class="grid two">
+            <div class="field">
+              <label for="schemaVersion">Schema version</label>
+              <input id="schemaVersion" type="number" min="1" step="1" readonly />
+            </div>
+            <div class="field">
+              <label for="globalMode">Global mode</label>
+              <select id="globalMode">
+                <option value="ON">ON</option>
+                <option value="OFF">OFF</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="collapseStyle">UI collapse style</label>
+              <select id="collapseStyle">
+                <option value="COMPACT_CARD">COMPACT_CARD</option>
+                <option value="MINIMAL_BAR">MINIMAL_BAR</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="reviewFallbackAction">Review fallback action</label>
+              <select id="reviewFallbackAction">
+                <option value="KEEP">KEEP</option>
+                <option value="COLLAPSE">COLLAPSE</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Rules</h2>
+          <div class="grid two">
+            <label class="check"><input id="hideSponsored" type="checkbox" /> Hide sponsored</label>
+            <label class="check"><input id="hideSuggested" type="checkbox" /> Hide suggested</label>
+            <label class="check"><input id="collapseReels" type="checkbox" /> Collapse reels</label>
+            <label class="check"><input id="hideFollowMarked" type="checkbox" /> Hide follow-marked</label>
+            <label class="check"><input id="allowlistOverridesAll" type="checkbox" /> allowlistOverridesAll</label>
+            <label class="check"><input id="blocklistOverridesLLM" type="checkbox" /> blocklistOverridesLLM</label>
+          </div>
+          <div class="grid two" style="margin-top: 10px">
+            <div class="field">
+              <label for="allowKeywords">Allow keywords</label>
+              <textarea id="allowKeywords" placeholder="keyword1\nkeyword2"></textarea>
+              <p class="hint">One keyword per line or comma-separated.</p>
+            </div>
+            <div class="field">
+              <label for="blockKeywords">Block keywords</label>
+              <textarea id="blockKeywords" placeholder="spam\nads"></textarea>
+              <p class="hint">One keyword per line or comma-separated.</p>
+            </div>
+            <div class="field">
+              <label for="allowSources">Allow sources</label>
+              <textarea id="allowSources" placeholder="PAGE|Example Page|12345"></textarea>
+              <p class="hint">Line format: TYPE|name|idHint(optional). TYPE: PERSON, PAGE, GROUP.</p>
+            </div>
+            <div class="field">
+              <label for="blockSources">Block sources</label>
+              <textarea id="blockSources" placeholder="PERSON|Annoying Author"></textarea>
+              <p class="hint">Line format: TYPE|name|idHint(optional). TYPE: PERSON, PAGE, GROUP.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>LLM</h2>
+          <div class="grid two">
+            <div class="field">
+              <label for="llmMode">Mode</label>
+              <select id="llmMode">
+                <option value="OFF">OFF</option>
+                <option value="BYOK">BYOK</option>
+                <option value="PAID">PAID</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="llmProvider">Provider</label>
+              <select id="llmProvider">
+                <option value="OPENAI">OPENAI</option>
+                <option value="OTHER">OTHER</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="llmModelId">Model ID</label>
+              <input id="llmModelId" type="text" placeholder="gpt-4.1-mini" />
+            </div>
+            <div class="field">
+              <label for="lazyTLDR">lazyTLDR</label>
+              <select id="lazyTLDR">
+                <option value="ON_CLICK">ON_CLICK</option>
+                <option value="FOR_TLDR_CLASS">FOR_TLDR_CLASS</option>
+                <option value="OFF">OFF</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="maxRequestsPerMinute">maxRequestsPerMinute</label>
+              <input id="maxRequestsPerMinute" type="number" min="1" step="1" />
+            </div>
+            <div class="field">
+              <label for="maxCharsToSend">maxCharsToSend</label>
+              <input id="maxCharsToSend" type="number" min="1" step="1" />
+            </div>
+            <div class="field">
+              <label for="minExtractionConfidence">minExtractionConfidence</label>
+              <input id="minExtractionConfidence" type="number" min="0" max="1" step="0.01" />
+            </div>
+            <div class="field">
+              <label for="minTextLen">minTextLen</label>
+              <input id="minTextLen" type="number" min="0" step="1" />
+            </div>
+            <div class="field">
+              <label for="byokApiKeyEncrypted">BYOK apiKeyEncrypted</label>
+              <input id="byokApiKeyEncrypted" type="text" placeholder="Encrypted key" />
+            </div>
+            <div class="field">
+              <label for="paidLicenseToken">PAID licenseToken</label>
+              <input id="paidLicenseToken" type="text" placeholder="License token" />
+            </div>
+            <div class="field" style="grid-column: 1 / -1;">
+              <label for="paidEndpointBaseUrl">PAID endpointBaseUrl</label>
+              <input id="paidEndpointBaseUrl" type="url" placeholder="https://api.example.com" />
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Prompt profile</h2>
+          <div class="grid two">
+            <div class="field">
+              <label for="promptVersion">version</label>
+              <input id="promptVersion" type="number" min="1" step="1" />
+            </div>
+            <div class="field">
+              <label for="decisionPolicy">decisionPolicy</label>
+              <select id="decisionPolicy">
+                <option value="CLASSIFY_ONLY">CLASSIFY_ONLY</option>
+                <option value="CLASSIFY_AND_TLDR">CLASSIFY_AND_TLDR</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="outputStyle">outputStyle</label>
+              <select id="outputStyle">
+                <option value="BULLETS">BULLETS</option>
+                <option value="ONE_LINER">ONE_LINER</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="maxBullets">maxBullets</label>
+              <input id="maxBullets" type="number" min="1" step="1" />
+            </div>
+            <div class="field">
+              <label for="maxChars">maxChars</label>
+              <input id="maxChars" type="number" min="1" step="1" />
+            </div>
+            <div class="field" style="grid-column: 1 / -1;">
+              <label for="promptIntent">intent</label>
+              <textarea id="promptIntent" placeholder="Prompt intent"></textarea>
+            </div>
+            <div class="field">
+              <label for="promptLabels">labels</label>
+              <textarea id="promptLabels" placeholder="ALLOW|Keep post visible\nHIDE|Hide post"></textarea>
+              <p class="hint">Line format: LABEL|description. LABEL: ALLOW, HIDE, TLDR, COLLAPSE, REVIEW.</p>
+            </div>
+            <div class="field">
+              <label for="tldrForLabels">tldrForLabels</label>
+              <textarea id="tldrForLabels" placeholder="TLDR"></textarea>
+              <p class="hint">One label per line or comma-separated.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Debug</h2>
+          <div class="grid two">
+            <label class="check"><input id="debugEnabled" type="checkbox" /> enabled</label>
+            <label class="check"><input id="showReasonOnHover" type="checkbox" /> showReasonOnHover</label>
+            <label class="check"><input id="logToConsole" type="checkbox" /> logToConsole</label>
+          </div>
+        </section>
+
+        <div class="actions">
+          <button id="reload" type="button" class="ghost">Reload from storage</button>
+          <button id="save" type="submit" class="primary">Save settings</button>
+        </div>
+      </form>
+    </div>
     <script type="module" src="./options.js"></script>
   </body>
 </html>

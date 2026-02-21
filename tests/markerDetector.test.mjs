@@ -54,6 +54,38 @@ test("detects follow marker from interactive aria-label", () => {
   assert.equal(result.flags.isFollowMarked, true);
 });
 
+test("detects follow marker when token is split by spaces", () => {
+  const detector = new LocalizedMarkerDetector();
+  const fakeEl = createFakeEl({
+    interactive: [
+      {
+        textContent: "F o l l o w",
+        getAttribute: () => null
+      }
+    ]
+  });
+
+  const result = detector.detect(fakeEl, "Regular post text");
+
+  assert.equal(result.flags.isFollowMarked, true);
+});
+
+test("detects follow marker with zero-width characters", () => {
+  const detector = new LocalizedMarkerDetector();
+  const fakeEl = createFakeEl({
+    interactive: [
+      {
+        textContent: "",
+        getAttribute: (name) => (name === "aria-label" ? "Fo\u200bllow" : null)
+      }
+    ]
+  });
+
+  const result = detector.detect(fakeEl, "Regular post text");
+
+  assert.equal(result.flags.isFollowMarked, true);
+});
+
 test("does not treat following as follow marker", () => {
   const detector = new LocalizedMarkerDetector();
   const fakeEl = createFakeEl();

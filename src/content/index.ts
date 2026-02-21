@@ -99,6 +99,28 @@ const collectAppliedDecisions = () =>
     source: unit.dataset.fbcleanSource ?? ""
   }));
 
+const hashString = (value: string): string => {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return `${hash}`;
+};
+
+const getUnitFingerprint = (unit: HTMLElement): string => {
+  const raw = unit.innerText || unit.textContent || "";
+  const normalized = raw.replace(/\s+/g, " ").trim().toLowerCase().slice(0, 2000);
+  return `${hashString(normalized)}:${normalized.length}`;
+};
+
+const hasUnitFingerprintChanged = (unit: HTMLElement): boolean => {
+  const nextFingerprint = getUnitFingerprint(unit);
+  const prevFingerprint = unit.dataset.fbcleanFingerprint ?? "";
+  unit.dataset.fbcleanFingerprint = nextFingerprint;
+  return prevFingerprint !== nextFingerprint;
+};
+
 const getKeepReevalCount = (unit: HTMLElement): number => {
   const value = Number.parseInt(unit.dataset.fbcleanKeepScans ?? "0", 10);
   return Number.isFinite(value) && value > 0 ? value : 0;
@@ -322,8 +344,10 @@ const processBatch = async () => {
 
     const scans = getKeepReevalCount(unit);
     if (scans >= MAX_KEEP_REEVALS) {
-      processed.add(unit);
-      return false;
+      if (!hasUnitFingerprintChanged(unit)) {
+        return false;
+      }
+      unit.dataset.fbcleanKeepScans = "0";
     }
 
     return true;
@@ -374,6 +398,7 @@ const processBatch = async () => {
 
   for (const unit of batch) {
     const signals = unitExtractor.extract(unit);
+    unit.dataset.fbcleanFingerprint = getUnitFingerprint(unit);
     const directDecision = getDirectDecision(signals);
     if (directDecision) {
       processed.add(unit);
@@ -443,10 +468,7 @@ const processBatch = async () => {
 
     if (action === "KEEP") {
       const scanCount = incrementKeepReevalCount(unit);
-      if (scanCount >= MAX_KEEP_REEVALS) {
-        processed.add(unit);
-        debugState.processedCount += 1;
-      } else {
+      if (scanCount < MAX_KEEP_REEVALS) {
         hasPendingKeepReeval = true;
       }
     } else {

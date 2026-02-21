@@ -16,12 +16,23 @@ import {
 
 const LEGACY_SUGGESTED = ["suggested for you", "рекомендовано", "מומלץ"];
 const LEGACY_REELS = ["reels", "reel", "рилс", "רילס"];
+const INVISIBLE_TEXT_CHARS = /[\u200B-\u200F\u2060\uFEFF]/g;
 
-const normalize = (value: string): string => value.replace(/\s+/g, " ").trim().toLowerCase();
+const normalize = (value: string): string =>
+  value.normalize("NFKC").replace(INVISIBLE_TEXT_CHARS, "").replace(/\s+/g, " ").trim().toLowerCase();
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const matchesTokenBoundary = (text: string, token: string): boolean => {
   const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(token)}($|[^\\p{L}\\p{N}])`, "iu");
+  return pattern.test(text);
+};
+
+const matchesSpacedAsciiToken = (text: string, token: string): boolean => {
+  const sequence = token
+    .split("")
+    .map((char) => escapeRegExp(char))
+    .join("[\\s\\p{P}\\p{S}]+");
+  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${sequence}($|[^\\p{L}\\p{N}])`, "iu");
   return pattern.test(text);
 };
 
@@ -32,7 +43,7 @@ const hasToken = (value: string, token: string): boolean => {
   }
 
   if (/^[a-z]+$/i.test(token)) {
-    return matchesTokenBoundary(normalized, token);
+    return matchesTokenBoundary(normalized, token) || matchesSpacedAsciiToken(normalized, token);
   }
 
   return normalized.includes(token) || matchesTokenBoundary(normalized, token);
@@ -52,15 +63,17 @@ const collectInteractiveTexts = (unitEl: HTMLElement): string[] => {
   };
 
   push(unitEl.getAttribute("aria-label"));
+  push(unitEl.getAttribute("aria-description"));
   push(unitEl.getAttribute("title"));
 
   const elements = unitEl.querySelectorAll<HTMLElement>(
-    'button, [role="button"], a[role="link"], [aria-label], [title], [data-tooltip-content]'
+    'button, [role="button"], a[role="link"], a[href], [aria-label], [aria-description], [title], [data-tooltip-content]'
   );
   for (let i = 0; i < elements.length; i += 1) {
     const el = elements[i];
     push(el.textContent);
     push(el.getAttribute("aria-label"));
+    push(el.getAttribute("aria-description"));
     push(el.getAttribute("title"));
     push(el.getAttribute("data-tooltip-content"));
   }

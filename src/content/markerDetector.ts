@@ -13,45 +13,10 @@ import {
   isSponsoredPost,
   isSuggestedPost
 } from "./cmfCore";
+import { hasAnyToken } from "./tokenMatcher";
 
 const LEGACY_SUGGESTED = ["suggested for you", "рекомендовано", "מומלץ"];
 const LEGACY_REELS = ["reels", "reel", "рилс", "רילס"];
-const INVISIBLE_TEXT_CHARS = /[\u200B-\u200F\u2060\uFEFF]/g;
-
-const normalize = (value: string): string =>
-  value.normalize("NFKC").replace(INVISIBLE_TEXT_CHARS, "").replace(/\s+/g, " ").trim().toLowerCase();
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const matchesTokenBoundary = (text: string, token: string): boolean => {
-  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(token)}($|[^\\p{L}\\p{N}])`, "iu");
-  return pattern.test(text);
-};
-
-const matchesSpacedAsciiToken = (text: string, token: string): boolean => {
-  const sequence = token
-    .split("")
-    .map((char) => escapeRegExp(char))
-    .join("[\\s\\p{P}\\p{S}]+");
-  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${sequence}($|[^\\p{L}\\p{N}])`, "iu");
-  return pattern.test(text);
-};
-
-const hasToken = (value: string, token: string): boolean => {
-  const normalized = normalize(value);
-  if (!normalized) {
-    return false;
-  }
-
-  if (/^[a-z]+$/i.test(token)) {
-    return matchesTokenBoundary(normalized, token) || matchesSpacedAsciiToken(normalized, token);
-  }
-
-  return normalized.includes(token) || matchesTokenBoundary(normalized, token);
-};
-
-const hasAnyToken = (value: string, tokens: string[]): boolean => {
-  return tokens.some((token) => hasToken(value, token.toLowerCase()));
-};
 
 const collectInteractiveTexts = (unitEl: HTMLElement): string[] => {
   const values: string[] = [];

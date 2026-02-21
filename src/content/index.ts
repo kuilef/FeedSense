@@ -4,6 +4,7 @@ import { DecisionApplier } from "./decisionApplier";
 import { FacebookFeedLocator } from "./feedLocator";
 import { sendBgRequest } from "./messaging/bgClient";
 import { ObserverController } from "./observerController";
+import { hasAnyToken, normalizeTokenText } from "./tokenMatcher";
 import { FacebookUnitExtractor } from "./unitExtractor";
 import { FacebookUnitLocator } from "./unitLocator";
 
@@ -75,7 +76,6 @@ const FEED_UNIT_CONTAINER_SELECTORS = [
   'div[aria-posinset]',
   'div[aria-describedby]'
 ] as const;
-const INVISIBLE_TEXT_CHARS = /[\u200B-\u200F\u2060\uFEFF]/g;
 const normalizeSourceName = (name: string | undefined): string => name?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
 type RuntimeRules = Pick<
   SettingsV1["rules"],
@@ -121,45 +121,10 @@ const hashString = (value: string): string => {
   return `${hash}`;
 };
 
-const normalizeForFingerprint = (value: string): string =>
-  value.normalize("NFKC").replace(INVISIBLE_TEXT_CHARS, "").replace(/\s+/g, " ").trim().toLowerCase();
-
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const matchesTokenBoundary = (text: string, token: string): boolean => {
-  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(token)}($|[^\\p{L}\\p{N}])`, "iu");
-  return pattern.test(text);
-};
-
-const matchesSpacedAsciiToken = (text: string, token: string): boolean => {
-  const sequence = token
-    .split("")
-    .map((char) => escapeRegExp(char))
-    .join("[\\s\\p{P}\\p{S}]+");
-  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${sequence}($|[^\\p{L}\\p{N}])`, "iu");
-  return pattern.test(text);
-};
+const normalizeForFingerprint = normalizeTokenText;
 
 const hasFollowToken = (value: string): boolean => {
-  const normalized = normalizeForFingerprint(value);
-  if (!normalized) {
-    return false;
-  }
-
-  for (let i = 0; i < CMF_FOLLOW_DICTIONARY.length; i += 1) {
-    const token = CMF_FOLLOW_DICTIONARY[i];
-    if (/^[a-z]+$/i.test(token)) {
-      if (matchesTokenBoundary(normalized, token) || matchesSpacedAsciiToken(normalized, token)) {
-        return true;
-      }
-      continue;
-    }
-    if (normalized.includes(token) || matchesTokenBoundary(normalized, token)) {
-      return true;
-    }
-  }
-
-  return false;
+  return hasAnyToken(value, CMF_FOLLOW_DICTIONARY);
 };
 
 const isFollowCtaElement = (element: HTMLElement): boolean => {

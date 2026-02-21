@@ -26,6 +26,12 @@ declare global {
       processNow: () => void;
       locateRoot: () => HTMLElement | null;
       locateUnits: () => HTMLElement[];
+      decisions: () => Array<{
+        hash: string;
+        state: string;
+        reason: string;
+        source: string;
+      }>;
     };
   }
 }
@@ -36,6 +42,7 @@ const unitLocator = new FacebookUnitLocator();
 const unitExtractor = new FacebookUnitExtractor();
 const observer = new ObserverController();
 const applier = new DecisionApplier();
+let extensionContextInvalidated = false;
 const DEBUG =
   window.__FB_CLEAN_DEBUG_BUILD__ === true ||
   window.localStorage.getItem("fbclean.debug") === "1" ||
@@ -65,6 +72,30 @@ const debugWarn = (...args: unknown[]) => {
     return;
   }
   console.warn("[FeedSense]", ...args);
+};
+
+const collectAppliedDecisions = () =>
+  Array.from(document.querySelectorAll<HTMLElement>('[data-fbclean-processed="1"]')).map((unit) => ({
+    hash: unit.dataset.fbcleanHash ?? "",
+    state: unit.dataset.fbcleanState ?? "",
+    reason: unit.dataset.fbcleanReason ?? "",
+    source: unit.dataset.fbcleanSource ?? ""
+  }));
+
+const isExtensionContextInvalidatedError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes("extension context invalidated");
+};
+
+const handleExtensionContextInvalidated = () => {
+  if (extensionContextInvalidated) {
+    return;
+  }
+  extensionContextInvalidated = true;
+  observer.stop();
+  debugState.lastError = "Extension context invalidated. Reload the page after reloading extension.";
+  updateDebugPanel("context-invalidated");
+  debugWarn("Extension context invalidated. Stop processing until page reload.");
 };
 
 const getDebugSnapshot = (): FeedSenseDebugSnapshot => {
@@ -165,6 +196,10 @@ const injectStyles = () => {
 };
 
 const processBatch = async () => {
+  if (extensionContextInvalidated) {
+    return;
+  }
+
   debugState.runs += 1;
   const root = feedLocator.locateFeedRoot(document);
   debugState.rootFound = Boolean(root);
@@ -188,9 +223,11 @@ const processBatch = async () => {
   }
 
   const signalsByUnit = new Map<string, HTMLElement>();
+  const itemByUnitId = new Map<string, PostSignals>();
   const items: PostSignals[] = batch.map((unit) => {
     const signals = unitExtractor.extract(unit);
     signalsByUnit.set(signals.unitId, unit);
+    itemByUnitId.set(signals.unitId, signals);
     return signals;
   });
 
@@ -198,6 +235,10 @@ const processBatch = async () => {
   try {
     response = await sendBgRequest<BgResponse>({ type: "EVALUATE_BATCH", items, settingsVersion: 1 });
   } catch (error) {
+    if (isExtensionContextInvalidatedError(error)) {
+      handleExtensionContextInvalidated();
+      return;
+    }
     debugState.lastError = error instanceof Error ? error.message : String(error);
     updateDebugPanel("background-error");
     debugWarn("sendBgRequest failed", error);
@@ -210,17 +251,36 @@ const processBatch = async () => {
   }
 
   let applied = 0;
+  const actionCounts: Record<string, number> = {};
+  const decisionSamples: Array<{
+    unitId: string;
+    action: string;
+    reasonCodes: string[];
+    sourceName: string;
+    state: string;
+  }> = [];
   for (const result of response.results) {
     const unit = signalsByUnit.get(result.unitId);
     if (!unit) {
       continue;
     }
+    const item = itemByUnitId.get(result.unitId);
 
     processed.add(unit);
     debugState.processedCount += 1;
     applied += 1;
-    unit.dataset.fbcleanHash = items.find((entry) => entry.unitId === result.unitId)?.canonicalHash;
+    unit.dataset.fbcleanHash = item?.canonicalHash ?? "";
+    unit.dataset.fbcleanSource = item?.sourceName ?? "";
     applier.apply(unit, result.outcome.action as ActionDecision, result.outcome.action.reasonCodes.join(","));
+    const action = result.outcome.action.action;
+    actionCounts[action] = (actionCounts[action] ?? 0) + 1;
+    decisionSamples.push({
+      unitId: result.unitId,
+      action,
+      reasonCodes: result.outcome.action.reasonCodes,
+      sourceName: item?.sourceName ?? "(unknown)",
+      state: unit.dataset.fbcleanState ?? "unknown"
+    });
   }
 
   debugState.lastError = "";
@@ -229,7 +289,9 @@ const processBatch = async () => {
     locatedUnits: locatedUnits.length,
     queuedUnits: units.length,
     batchSize: batch.length,
-    applied
+    applied,
+    actionCounts,
+    decisions: decisionSamples
   });
 };
 
@@ -261,7 +323,8 @@ if (DEBUG) {
     locateUnits: () => {
       const root = feedLocator.locateFeedRoot(document);
       return root ? unitLocator.locateUnits(root) : [];
-    }
+    },
+    decisions: () => collectAppliedDecisions()
   };
   window.addEventListener("feedsense:processNow", () => {
     void processBatch();
@@ -284,6 +347,7 @@ window.setInterval(() => {
     lastHref = location.href;
     observer.stop();
     processed = new WeakSet<HTMLElement>();
+    extensionContextInvalidated = false;
     updateDebugPanel("route-change");
     bootstrap();
   }

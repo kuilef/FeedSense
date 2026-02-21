@@ -1,5 +1,5 @@
 import { ActionDecision, BgResponse, PostSignals, SettingsV1 } from "../shared/contracts";
-import { CMF_FOLLOW_DICTIONARY, CMF_JOIN_DICTIONARY } from "./cmfCore";
+import { CMF_FOLLOW_DICTIONARY, CMF_JOIN_DICTIONARY, CMF_SPONSORED_DICTIONARY } from "./cmfCore";
 import { DecisionApplier } from "./decisionApplier";
 import { FacebookFeedLocator } from "./feedLocator";
 import { sendBgRequest } from "./messaging/bgClient";
@@ -81,6 +81,39 @@ type RuntimeRules = Pick<
   SettingsV1["rules"],
   "hideSponsored" | "hideSuggested" | "collapseReels" | "hideFollowMarked" | "allowSources"
 >;
+type RuntimeRuleToggle = "hideFollowMarked" | "hideSponsored";
+interface DirectSweepRule {
+  id: "follow" | "group_join" | "sponsored";
+  tokens: string[];
+  reasonCode: string;
+  enabledBy: RuntimeRuleToggle;
+  requireGroupUnit?: boolean;
+  maxTokenTextLength?: number;
+}
+
+const DIRECT_SWEEP_RULES: readonly DirectSweepRule[] = [
+  {
+    id: "follow",
+    tokens: CMF_FOLLOW_DICTIONARY,
+    reasonCode: "DIRECT_FOLLOW_CTA_SWEEP",
+    enabledBy: "hideFollowMarked"
+  },
+  {
+    id: "group_join",
+    tokens: CMF_JOIN_DICTIONARY,
+    reasonCode: "DIRECT_GROUP_JOIN_CTA_SWEEP",
+    enabledBy: "hideFollowMarked",
+    requireGroupUnit: true
+  },
+  {
+    id: "sponsored",
+    tokens: CMF_SPONSORED_DICTIONARY,
+    reasonCode: "DIRECT_SPONSORED_CTA_SWEEP",
+    enabledBy: "hideSponsored",
+    maxTokenTextLength: 40
+  }
+] as const;
+
 const runtimeRules: RuntimeRules = {
   hideSponsored: true,
   hideSuggested: false,
@@ -123,23 +156,30 @@ const hashString = (value: string): string => {
 
 const normalizeForFingerprint = normalizeTokenText;
 
-const hasFollowToken = (value: string): boolean => {
-  return hasAnyToken(value, CMF_FOLLOW_DICTIONARY);
-};
-
-const hasJoinToken = (value: string): boolean => {
-  return hasAnyToken(value, CMF_JOIN_DICTIONARY);
-};
-
-const isFollowCtaElement = (element: HTMLElement): boolean => {
-  const texts = [
+const getElementCandidateTexts = (element: HTMLElement): string[] => {
+  return [
     element.textContent ?? "",
     element.getAttribute("aria-label") ?? "",
     element.getAttribute("aria-description") ?? "",
     element.getAttribute("title") ?? "",
     element.getAttribute("data-tooltip-content") ?? ""
   ];
-  return texts.some((value) => hasFollowToken(value) || hasJoinToken(value));
+};
+
+const matchesSweepRule = (texts: string[], rule: DirectSweepRule): boolean => {
+  for (let i = 0; i < texts.length; i += 1) {
+    const normalized = normalizeForFingerprint(texts[i]);
+    if (!normalized) {
+      continue;
+    }
+    if (rule.maxTokenTextLength && normalized.length > rule.maxTokenTextLength) {
+      continue;
+    }
+    if (hasAnyToken(normalized, rule.tokens)) {
+      return true;
+    }
+  }
+  return false;
 };
 
 const findFeedUnitContainer = (element: HTMLElement, root: HTMLElement): HTMLElement | null => {
@@ -183,14 +223,21 @@ const hasUnitFingerprintChanged = (unit: HTMLElement): boolean => {
   return prevFingerprint !== nextFingerprint;
 };
 
-const sweepAndHideFollowUnits = (root: HTMLElement): number => {
+const sweepAndHideDirectUnits = (root: HTMLElement): number => {
+  const activeRules = DIRECT_SWEEP_RULES.filter((rule) => runtimeRules[rule.enabledBy]);
+  if (!activeRules.length) {
+    return 0;
+  }
+
   const elements = root.querySelectorAll<HTMLElement>(FINGERPRINT_SELECTOR);
   const max = Math.min(elements.length, FOLLOW_SWEEP_MAX_CANDIDATES);
   const hidden = new Set<HTMLElement>();
 
   for (let i = 0; i < max; i += 1) {
     const element = elements[i];
-    if (!isFollowCtaElement(element)) {
+    const ctaTexts = getElementCandidateTexts(element);
+    const candidateRules = activeRules.filter((rule) => matchesSweepRule(ctaTexts, rule));
+    if (!candidateRules.length) {
       continue;
     }
 
@@ -204,30 +251,24 @@ const sweepAndHideFollowUnits = (root: HTMLElement): number => {
       continue;
     }
 
-    const ctaTexts = [
-      element.textContent ?? "",
-      element.getAttribute("aria-label") ?? "",
-      element.getAttribute("aria-description") ?? "",
-      element.getAttribute("title") ?? "",
-      element.getAttribute("data-tooltip-content") ?? ""
-    ];
-    const hasFollow = ctaTexts.some((value) => hasFollowToken(value));
-    const hasJoin = ctaTexts.some((value) => hasJoinToken(value));
-    if (!hasFollow && !hasJoin) {
-      continue;
-    }
-
-    if (hasJoin && !hasFollow) {
-      const isGroupUnit = Boolean(unit.querySelector('a[href*="/groups/"]'));
-      if (!isGroupUnit) {
+    const isGroupUnit = Boolean(unit.querySelector('a[href*="/groups/"]'));
+    let matchedRule: DirectSweepRule | null = null;
+    for (let j = 0; j < candidateRules.length; j += 1) {
+      const rule = candidateRules[j];
+      if (rule.requireGroupUnit && !isGroupUnit) {
         continue;
       }
+      matchedRule = rule;
+      break;
+    }
+    if (!matchedRule) {
+      continue;
     }
 
     const decision: ActionDecision = {
       action: "HIDE",
       confidence: 1,
-      reasonCodes: [hasJoin && !hasFollow ? "DIRECT_GROUP_JOIN_CTA_SWEEP" : "DIRECT_FOLLOW_CTA_SWEEP"]
+      reasonCodes: [matchedRule.reasonCode]
     };
     applier.apply(unit, decision, decision.reasonCodes.join(","));
     unit.dataset.fbcleanKeepScans = "0";
@@ -460,7 +501,7 @@ const processBatch = async () => {
     return;
   }
 
-  const sweptHidden = runtimeRules.hideFollowMarked ? sweepAndHideFollowUnits(root) : 0;
+  const sweptHidden = sweepAndHideDirectUnits(root);
   const locatedUnits = unitLocator.locateUnits(root);
   const units = locatedUnits.filter((unit) => {
     if (processed.has(unit) || unit.dataset.fbcleanProcessed === "1") {
@@ -485,7 +526,7 @@ const processBatch = async () => {
   if (!batch.length) {
     updateDebugPanel(sweptHidden > 0 ? `sweep:${sweptHidden}` : "empty-batch");
     if (sweptHidden > 0) {
-      debugLog("follow sweep hid units", { hidden: sweptHidden });
+      debugLog("direct sweep hid units", { hidden: sweptHidden });
     }
     return;
   }
